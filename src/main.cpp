@@ -9,6 +9,9 @@
 #define IMU_ADDRESS_PRIMARY 0x68
 #define IMU_ADDRESS_SECONDARY 0x69
 
+// 軸が水平なら0、垂直なら90
+constexpr float SHAFT_TILT_DEG = 45.0f;
+
 MPU6050 imuMpu6050;
 MPU6500 imuMpu6500;
 MPU9250 imuMpu9250;
@@ -30,7 +33,77 @@ uint8_t imuAddress = IMU_ADDRESS_PRIMARY;
 
 float angle = 0.0f;
 
+struct Quat {
+  float w;
+  float x;
+  float y;
+  float z;
+};
+
+Vec3 shaftAxisBody;
+Quat qRef = {1.0f, 0.0f, 0.0f, 0.0f};
+bool refLocked = false;
+float prevWrapped = 0.0f;
+float totalAngleRad = 0.0f;
+
 uint8_t whoAmI = 0xFF;
+
+Quat quatConj(const Quat& q) {
+  return {q.w, -q.x, -q.y, -q.z};
+}
+
+Quat quatMul(const Quat& a, const Quat& b) {
+  return {
+    a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+    a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
+  };
+}
+
+Quat currentQuat() {
+  return {
+    filter.getQuatW(),
+    filter.getQuatX(),
+    filter.getQuatY(),
+    filter.getQuatZ()
+  };
+}
+
+float unwrapAngle(float wrapped, float& prevWrappedLocal, float& totalLocal) {
+  float delta = wrapped - prevWrappedLocal;
+  if (delta > PI) {
+    delta -= 2.0f * PI;
+  }
+  if (delta < -PI) {
+    delta += 2.0f * PI;
+  }
+  totalLocal += delta;
+  prevWrappedLocal = wrapped;
+  return totalLocal;
+}
+
+void lockZeroHere() {
+  qRef = currentQuat();
+  refLocked = true;
+  prevWrapped = 0.0f;
+  totalAngleRad = 0.0f;
+}
+
+float shaftAngleRad() {
+  const Quat qNow = currentQuat();
+  const Quat qRel = quatMul(quatConj(qRef), qNow);
+
+  const float wrapped = getAngleAboutAxis(
+    qRel.w,
+    qRel.x,
+    qRel.y,
+    qRel.z,
+    shaftAxisBody
+  );
+
+  return unwrapAngle(wrapped, prevWrapped, totalAngleRad);
+}
 
 
 
@@ -122,6 +195,9 @@ void setup() {
     ;
   }
 
+  const float theta = SHAFT_TILT_DEG * DEG_TO_RAD;
+  shaftAxisBody = normalize(Vec3(0.0f, cosf(theta), sinf(theta)));
+
   if (probeI2CAddress(IMU_ADDRESS_PRIMARY)) {
     imuAddress = IMU_ADDRESS_PRIMARY;
   } else if (probeI2CAddress(IMU_ADDRESS_SECONDARY)) {
@@ -187,9 +263,18 @@ void setup() {
   // Betaは大きいほどドリフト補正を強める。環境ノイズに応じて調整可。
   filter.begin(hasMagnetometer ? 0.12f : 0.05f);
   Serial.println("Calibration and filter setup complete.");
+  Serial.println("Send 'z' to zero the current angle.");
 }
 
 void loop() {
+  while (Serial.available() > 0) {
+    char c = (char)Serial.read();
+    if (c == 'z' || c == 'Z') {
+      lockZeroHere();
+      Serial.println("Zero locked.");
+    }
+  }
+
   imu->update();
   imu->getAccel(&imuAccel);
   imu->getGyro(&imuGyro);
@@ -207,15 +292,12 @@ void loop() {
       imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ
     );
   }
-  
-  Vec3 axis = {0.0f, 0.0f, M_PI / 2}; // Z軸周りの回転角を取得
-  angle = getAngleAboutAxis(
-    filter.getQuatW(),
-    filter.getQuatX(),
-    filter.getQuatY(),
-    filter.getQuatZ(),
-    axis
-  );
-  Serial.println(angle);
+
+  if (!refLocked) {
+    lockZeroHere();
+  }
+
+  angle = shaftAngleRad() * RAD_TO_DEG;
+  Serial.printf("angle_deg=%.2f\n", angle);
   delay(10);
 }
