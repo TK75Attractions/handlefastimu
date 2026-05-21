@@ -298,6 +298,6 @@ void loop() {
   }
 
   angle = shaftAngleRad() * RAD_TO_DEG;
-  Serial.printf("angle_deg=%.2f\n", angle);
+  Serial.printf("%.2f\n", angle);
   delay(10);
 }
