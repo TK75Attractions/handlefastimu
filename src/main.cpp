@@ -45,6 +45,8 @@ Quat qRef = {1.0f, 0.0f, 0.0f, 0.0f};
 bool refLocked = false;
 float prevWrapped = 0.0f;
 float totalAngleRad = 0.0f;
+float currentBeta = 0.2f; // responsiveness (higher = faster correction)
+uint32_t startupStableUntil = 0;
 
 uint8_t whoAmI = 0xFF;
 
@@ -263,6 +265,10 @@ void setup() {
   // Betaは大きいほどドリフト補正を強める。環境ノイズに応じて調整可。
   filter.begin(hasMagnetometer ? 0.12f : 0.05f);
   Serial.println("Calibration and filter setup complete.");
+  // Increase responsiveness by default; allow runtime tuning.
+  currentBeta = hasMagnetometer ? 0.4f : 0.2f;
+  filter.changeBeta(currentBeta);
+  startupStableUntil = millis() + 1000; // wait ~1s before auto zero-lock
   Serial.println("Send 'z' to zero the current angle.");
 }
 
@@ -272,6 +278,16 @@ void loop() {
     if (c == 'z' || c == 'Z') {
       lockZeroHere();
       Serial.println("Zero locked.");
+    } else if (c == 'b') {
+      currentBeta += 0.05f;
+      if (currentBeta > 1.0f) currentBeta = 1.0f;
+      filter.changeBeta(currentBeta);
+      Serial.printf("Beta increased: %.3f\n", currentBeta);
+    } else if (c == 'B') {
+      currentBeta -= 0.05f;
+      if (currentBeta < 0.01f) currentBeta = 0.01f;
+      filter.changeBeta(currentBeta);
+      Serial.printf("Beta decreased: %.3f\n", currentBeta);
     }
   }
 
@@ -293,11 +309,15 @@ void loop() {
     );
   }
 
-  if (!refLocked) {
+  if (!refLocked && millis() > startupStableUntil) {
     lockZeroHere();
   }
 
   angle = shaftAngleRad() * RAD_TO_DEG;
-  Serial.printf("%.2f\n", angle);
+  Serial.printf("0,%.2f\n", angle);
   delay(10);
+  float rollDeg, pitchDeg, yawDeg;
+    const Quat q = currentQuat();
+    quaternionToEulerDeg(q.w, q.x, q.y, q.z, rollDeg, pitchDeg, yawDeg);
+    //Serial.printf("%.2f,%.2f,%.2f\n", rollDeg, pitchDeg, yawDeg);
 }
