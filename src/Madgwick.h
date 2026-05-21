@@ -48,4 +48,25 @@ private:
   float q3 = 0.0f;
 };
 
+struct Vec3 {
+  Vec3() = default;
+  Vec3(float xValue, float yValue, float zValue) : x(xValue), y(yValue), z(zValue) {}
+
+  float x;
+  float y;
+  float z;
+};
+
+Vec3 normalize(const Vec3& v);
+
+float dot(const Vec3& a, const Vec3& b);
+
+float getAngleAboutAxis(
+    float w,
+    float x,
+    float y,
+    float z,
+    Vec3 axis
+);
+
 #endif
