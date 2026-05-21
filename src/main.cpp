@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "FastIMU.h"
 #include <Wire.h>
+#include <math.h>
 
 #include "Madgwick.h"
 
@@ -27,7 +28,11 @@ Madgwick filter;
 bool hasMagnetometer = false;
 uint8_t imuAddress = IMU_ADDRESS_PRIMARY;
 
+float angle = 0.0f;
+
 uint8_t whoAmI = 0xFF;
+
+
 
 void quaternionToEulerDeg(float w, float x, float y, float z, float& rollDeg, float& pitchDeg, float& yawDeg) {
   const float sinrCosp = 2.0f * (w * x + y * z);
@@ -47,11 +52,15 @@ void quaternionToEulerDeg(float w, float x, float y, float z, float& rollDeg, fl
   yawDeg = yaw * RAD_TO_DEG_F;
 }
 
+// ===============================
+/* --- I2C関連 --- */
+
 bool probeI2CAddress(uint8_t address) {
   Wire.beginTransmission(address);
   return Wire.endTransmission(true) == 0;
 }
 
+// WHO_AM_IレジスタからIDを読み取る。失敗した場合は0xFFを返す。
 uint8_t readWhoAmI(uint8_t address) {
   Wire.beginTransmission(address);
   Wire.write((uint8_t)0x75);
@@ -64,6 +73,7 @@ uint8_t readWhoAmI(uint8_t address) {
   return Wire.read();
 }
 
+// WHO_AM_Iの値からIMUクラスを選択する。成功した場合はtrue、失敗した場合はfalseを返す。
 bool selectImuByWhoAmI(uint8_t id) {
   switch (id) {
     case 0x68:
@@ -95,6 +105,10 @@ bool selectImuByWhoAmI(uint8_t id) {
       return false;
   }
 }
+
+// ===============================
+
+/* --- Setup --- */
 
 void setup() {
   Wire.begin();
@@ -193,29 +207,15 @@ void loop() {
       imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ
     );
   }
-  /*
-  Serial.print("q: ");
-  Serial.print(filter.getQuatW(), 6);
-  Serial.print(", ");
-  Serial.print(filter.getQuatX(), 6);
-  Serial.print(", ");
-  Serial.print(filter.getQuatY(), 6);
-  Serial.print(", ");
-  Serial.println(filter.getQuatZ(), 6);
-  */
-
-  float rollDeg, pitchDeg, yawDeg;
-  quaternionToEulerDeg(
-    filter.getQuatW(), filter.getQuatX(), filter.getQuatY(), filter.getQuatZ(),
-    rollDeg, pitchDeg, yawDeg
+  
+  Vec3 axis = {0.0f, 0.0f, M_PI / 2}; // Z軸周りの回転角を取得
+  angle = getAngleAboutAxis(
+    filter.getQuatW(),
+    filter.getQuatX(),
+    filter.getQuatY(),
+    filter.getQuatZ(),
+    axis
   );
-
-  Serial.print("euler: ");
-  Serial.print(rollDeg, 2);
-  Serial.print(", ");
-  Serial.print(pitchDeg, 2);
-  Serial.print(", ");
-  Serial.println(yawDeg, 2);
-
+  Serial.println(angle);
   delay(10);
 }

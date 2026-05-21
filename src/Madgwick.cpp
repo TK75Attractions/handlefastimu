@@ -180,3 +180,63 @@ float Madgwick::invSqrt(float x) {
   y = y * (1.5f - (halfx * y * y));
   return y;
 }
+// ===============================
+// ベクトル正規化
+// ===============================
+Vec3 normalize(const Vec3& v)
+{
+    float len = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+
+    if (len < 1e-6f) {
+        return {0.0f, 0.0f, 0.0f};
+    }
+
+    return {
+        v.x / len,
+        v.y / len,
+        v.z / len
+    };
+}
+
+
+// ===============================
+// 内積
+// ===============================
+float dot(const Vec3& a, const Vec3& b)
+{
+    return a.x * b.x +
+           a.y * b.y +
+           a.z * b.z;
+}
+
+
+// ===============================
+// 任意軸まわりの回転角を取得
+//
+// q = (w,x,y,z)
+// axis = 回転を測りたい軸
+//
+// 戻り値: ラジアン
+// ===============================
+float getAngleAboutAxis(
+    float w,
+    float x,
+    float y,
+    float z,
+    Vec3 axis
+)
+{
+    // 軸を正規化
+    axis = normalize(axis);
+
+    // quaternion vector part
+    Vec3 v = {x, y, z};
+
+    // 軸方向成分
+    float d = dot(v, axis);
+
+    // 回転角
+    float angle = 2.0f * atan2f(d, w);
+
+    return angle;
+}
