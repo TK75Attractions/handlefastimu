@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <math.h>
+#include <Adafruit_ADS1X15.h>
 
 // Split responsibilities: IMU hardware handling is in imu_manager, while
 // filter/quaternion math is in orientation. This keeps this file focused
@@ -13,6 +14,10 @@
 // Necessary I2C addresses; change if your hardware uses other pins.
 #define IMU_ADDRESS_PRIMARY 0x68
 #define IMU_ADDRESS_SECONDARY 0x69
+
+
+// ADS
+Adafruit_ADS1115 ads;
 
 // Shaft tilt relative to the body frame: 0 = horizontal, 90 = vertical.
 constexpr float SHAFT_TILT_DEG = 45.0f;
@@ -43,51 +48,59 @@ void setup() {
   Serial.begin(115200);
   while (!Serial) { ; }
 
+  if (!ads.begin()) {
+    Serial.println("[PEDAL] Failed to initialize ADS1115. Check wiring.");
+    while (true) { delay(1000); }
+  }
+
+  ads.setGain(GAIN_ONE); // 1x gain = +/-4.096V range (default)
+  Serial.println("[PEDAL] ADS1115 initialized.");
+
   // Compute the shaft axis in body coordinates using simple tilt angle.
   const float theta = SHAFT_TILT_DEG * DEG_TO_RAD;
   const Vec3 shaftAxisBody = normalize(Vec3(0.0f, cosf(theta), sinf(theta)));
 
   // Detect and select IMU on the bus.
   if (!ImuManager::probeAndSelect(IMU_ADDRESS_PRIMARY, IMU_ADDRESS_SECONDARY)) {
-    Serial.println("IMU not found on 0x68/0x69. Check wiring/power.");
+    Serial.println("[HANDLE] IMU not found on 0x68/0x69. Check wiring/power.");
     while (true) { delay(1000); }
   }
 
-  Serial.print("IMU I2C address: 0x");
+  Serial.print("[HANDLE] IMU I2C address: 0x");
   Serial.println(ImuManager::getImuAddress(), HEX);
 
-  Serial.print("WHO_AM_I: 0x");
+  Serial.print("[HANDLE] WHO_AM_I: 0x");
   Serial.println(ImuManager::getWhoAmI(), HEX);
 
   // Initialize the selected IMU; the driver returns 0 on success.
   int err = ImuManager::initImu(calib);
   if (err != 0) {
-    Serial.print("IMU init error: ");
+    Serial.print("[HANDLE] IMU init error: ");
     Serial.println(err);
     while (true) { delay(1000); }
   }
 
   // Calibrate if possible. Magnetometer calibration is optional.
   const bool hasMag = ImuManager::hasMagnetometer();
-  Serial.println("Start calibration...");
+  Serial.println("[HANDLE] Start calibration...");
   if (hasMag) {
-    Serial.println("Mag calibration: move the IMU in a figure-8 pattern.");
+    Serial.println("[HANDLE] Mag calibration: move the IMU in a figure-8 pattern.");
     delay(3000);
     ImuManager::calibrateMag(&calib);
-    Serial.println("Mag calibration done.");
+    Serial.println("[HANDLE] Mag calibration done.");
   } else {
-    Serial.println("No magnetometer detected. Yaw drift cannot be fully removed.");
+    Serial.println("[HANDLE] No magnetometer detected. Yaw drift cannot be fully removed.");
   }
 
-  Serial.println("Accel/Gyro calibration: keep the IMU still and level.");
+  Serial.println("[HANDLE] Accel/Gyro calibration: keep the IMU still and level.");
   delay(3000);
   ImuManager::calibrateAccelGyro(&calib);
-  Serial.println("Accel/Gyro calibration done.");
+  Serial.println("[HANDLE] Accel/Gyro calibration done.");
 
   // Re-initialize with calibration values.
   err = ImuManager::initImu(calib);
   if (err != 0) {
-    Serial.print("IMU re-init error: ");
+    Serial.print("[HANDLE] IMU re-init error: ");
     Serial.println(err);
     while (true) { delay(1000); }
   }
@@ -97,8 +110,8 @@ void setup() {
   Orientation::begin(hasMag, shaftAxisBody, initialBeta);
 
   startupStableUntil = millis() + 1000; // delay ~1s before auto zero-lock
-  Serial.println("Calibration and filter setup complete.");
-  Serial.println("Send 'z' to zero the current angle. Send 'b'/'B' to tune beta.");
+  Serial.println("[HANDLE] Calibration and filter setup complete.");
+  Serial.println("[HANDLE] Send 'z' to zero the current angle. Send 'b'/'B' to tune beta.");
 }
 
 // -------------------- Loop --------------------
@@ -110,17 +123,17 @@ void loop() {
     if (c == 'z' || c == 'Z') {
       Orientation::lockZeroHere();
       refLocked = true;
-      Serial.println("Zero locked.");
+      Serial.println("[HANDLE] Zero locked.");
     } else if (c == 'b') {
       float b = Orientation::getBeta() + 0.05f;
       if (b > 1.0f) b = 1.0f;
       Orientation::changeBeta(b);
-      Serial.printf("Beta increased: %.3f\n", b);
+      Serial.printf("[HANDLE] Beta increased: %.3f\n", b);
     } else if (c == 'B') {
       float b = Orientation::getBeta() - 0.05f;
       if (b < 0.01f) b = 0.01f;
       Orientation::changeBeta(b);
-      Serial.printf("Beta decreased: %.3f\n", b);
+      Serial.printf("[HANDLE] Beta decreased: %.3f\n", b);
     }
   }
 
