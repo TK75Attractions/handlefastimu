@@ -19,6 +19,10 @@
 // ADS
 Adafruit_ADS1115 ads;
 
+int16_t raw;
+float voltage;
+float pedalPercent = 0.0f;
+
 // Shaft tilt relative to the body frame: 0 = horizontal, 90 = vertical.
 constexpr float SHAFT_TILT_DEG = 45.0f;
 
@@ -137,6 +141,12 @@ void loop() {
     }
   }
 
+  // Read ADS1115.
+  raw = ads.readADC_SingleEnded(0);
+  voltage = ads.computeVolts(raw);
+  pedalPercent = voltage / 3.3f; // Assuming GAIN_ONE
+
+
   // Read sensors.
   ImuManager::update();
   ImuManager::getAccel(&imuAccel);
@@ -165,7 +175,7 @@ void loop() {
   // Compute shaft angle and print a compact CSV-like line for downstream
   // parsing. Keep this formatting unchanged from the original sketch.
   const float angleDeg = Orientation::shaftAngleRad() * RAD_TO_DEG_F;
-  Serial.printf("0,%.2f\n", angleDeg);
+  Serial.printf("%.2f,%.2f\n", pedalPercent, angleDeg);
 
   // Optional: compute Euler angles for debugging (commented by default).
   // float rollDeg, pitchDeg, yawDeg;
