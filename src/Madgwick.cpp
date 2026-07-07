@@ -208,35 +208,3 @@ float dot(const Vec3& a, const Vec3& b)
            a.y * b.y +
            a.z * b.z;
 }
-
-
-// ===============================
-// 任意軸まわりの回転角を取得
-//
-// q = (w,x,y,z)
-// axis = 回転を測りたい軸
-//
-// 戻り値: ラジアン
-// ===============================
-float getAngleAboutAxis(
-    float w,
-    float x,
-    float y,
-    float z,
-    Vec3 axis
-)
-{
-    // 軸を正規化
-    axis = normalize(axis);
-
-    // quaternion vector part
-    Vec3 v = {x, y, z};
-
-    // 軸方向成分
-    float d = dot(v, axis);
-
-    // 回転角
-    float angle = 2.0f * atan2f(d, w);
-
-    return angle;
-}

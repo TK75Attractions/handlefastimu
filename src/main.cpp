@@ -23,7 +23,7 @@ int16_t raw;
 float voltage;
 float pedalPercent = 0.0f;
 
-// Shaft tilt relative to the body frame: 0 = horizontal, 90 = vertical.
+// Shaft tilt in the world X-Z plane: 0 = horizontal, 90 = vertical.
 constexpr float SHAFT_TILT_DEG = 45.0f;
 
 // Application-level state and buffers. Keep these local to the sketch
@@ -60,9 +60,10 @@ void setup() {
   ads.setGain(GAIN_ONE); // 1x gain = +/-4.096V range (default)
   Serial.println("[PEDAL] ADS1115 initialized.");
 
-  // Compute the shaft axis in body coordinates using simple tilt angle.
+  // Compute the shaft axis in world coordinates.
   const float theta = SHAFT_TILT_DEG * DEG_TO_RAD;
-  const Vec3 shaftAxisBody = normalize(Vec3(0.0f, cosf(theta), sinf(theta)));
+  const Vec3 shaftAxisWorld = normalize(Vec3(cosf(theta), 0.0f, sinf(theta)));
+  const Vec3 sensorVector = normalize(Vec3(0.0f, 1.0f, 0.0f));
 
   // Detect and select IMU on the bus.
   if (!ImuManager::probeAndSelect(IMU_ADDRESS_PRIMARY, IMU_ADDRESS_SECONDARY)) {
@@ -93,7 +94,7 @@ void setup() {
     ImuManager::calibrateMag(&calib);
     Serial.println("[HANDLE] Mag calibration done.");
   } else {
-    Serial.println("[HANDLE] No magnetometer detected. Yaw drift cannot be fully removed.");
+    Serial.println("[HANDLE] No magnetometer detected.");
   }
 
   Serial.println("[HANDLE] Accel/Gyro calibration: keep the IMU still and level.");
@@ -111,7 +112,7 @@ void setup() {
 
   // Start orientation filter module with an appropriate beta value.
   const float initialBeta = hasMag ? 0.4f : 0.2f;
-  Orientation::begin(hasMag, shaftAxisBody, initialBeta);
+  Orientation::begin(hasMag, shaftAxisWorld, sensorVector, initialBeta);
 
   startupStableUntil = millis() + 1000; // delay ~1s before auto zero-lock
   Serial.println("[HANDLE] Calibration and filter setup complete.");
@@ -176,10 +177,6 @@ void loop() {
   // parsing. Keep this formatting unchanged from the original sketch.
   const float angleDeg = Orientation::shaftAngleRad() * RAD_TO_DEG_F;
   Serial.printf("%.2f,%.2f\n", pedalPercent, angleDeg);
-
-  // Optional: compute Euler angles for debugging (commented by default).
-  // float rollDeg, pitchDeg, yawDeg;
-  // Orientation::quaternionToEulerDeg(Orientation::getQuatW(), Orientation::getQuatX(), Orientation::getQuatY(), Orientation::getQuatZ(), rollDeg, pitchDeg, yawDeg);
 
   delay(10);
 }

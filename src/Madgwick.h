@@ -61,12 +61,4 @@ Vec3 normalize(const Vec3& v);
 
 float dot(const Vec3& a, const Vec3& b);
 
-float getAngleAboutAxis(
-    float w,
-    float x,
-    float y,
-    float z,
-    Vec3 axis
-);
-
 #endif
