@@ -1,3 +1,8 @@
+/*
+    Madgwick.cpp
+    内容: orientation.cppで使用するMadgwickフィルタの実装。
+ */
+
 #include "Madgwick.h"
 
 #include <Arduino.h>
@@ -8,8 +13,16 @@ Madgwick::Madgwick() {
   last_update = now;
 }
 
+/*
+    Madgwick::update
+    内容: 加速度、ジャイロ、磁気センサの値を使用してクォータニオンを更新する。
+    引数: 
+        gx, gy, gz: ジャイロの角速度 (ラジアン/秒)
+        ax, ay, az: 加速度 (g単位)
+        mx, my, mz: 磁気センサの値 (ガウス単位)
+*/
 void Madgwick::update(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz) {
-  float recipNorm;
+  float recipNorm; // 
   float s0, s1, s2, s3;
   float qDot1, qDot2, qDot3, qDot4;
   float hx, hy;
@@ -207,36 +220,4 @@ float dot(const Vec3& a, const Vec3& b)
     return a.x * b.x +
            a.y * b.y +
            a.z * b.z;
-}
-
-
-// ===============================
-// 任意軸まわりの回転角を取得
-//
-// q = (w,x,y,z)
-// axis = 回転を測りたい軸
-//
-// 戻り値: ラジアン
-// ===============================
-float getAngleAboutAxis(
-    float w,
-    float x,
-    float y,
-    float z,
-    Vec3 axis
-)
-{
-    // 軸を正規化
-    axis = normalize(axis);
-
-    // quaternion vector part
-    Vec3 v = {x, y, z};
-
-    // 軸方向成分
-    float d = dot(v, axis);
-
-    // 回転角
-    float angle = 2.0f * atan2f(d, w);
-
-    return angle;
 }

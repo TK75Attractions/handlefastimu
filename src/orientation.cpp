@@ -1,7 +1,5 @@
 // orientation.cpp
-// Implementation of orientation filter management and quaternion helpers.
-// This file holds the Madgwick filter instance and maintains the state
-// needed to produce a continuous shaft angle measurement.
+// Implementation of orientation filter management and shaft angle math.
 
 #include "orientation.hpp"
 #include <math.h>
@@ -9,34 +7,52 @@
 namespace Orientation {
 
 static Madgwick filter;
-static bool hasMag = false;
 static float currentBeta = 0.2f;
 
-// Shaft axis expressed in the body frame (set by caller during begin).
-static Vec3 shaftAxisBody = {0.0f, 1.0f, 0.0f};
+static Vec3 shaftAxisWorld = {1.0f, 0.0f, 0.0f};
+static Vec3 sensorVector = {0.0f, 1.0f, 0.0f};
+static Vec3 referenceProjection = {0.0f, 1.0f, 0.0f};
 
-// Reference quaternion locked by lockZeroHere().
-struct Quat { float w; float x; float y; float z; };
-static Quat qRef = {1.0f, 0.0f, 0.0f, 0.0f};
 static bool refLocked = false;
 static float prevWrapped = 0.0f;
 static float totalAngleRad = 0.0f;
 
-static inline Quat quatConj(const Quat& q) {
-  return {q.w, -q.x, -q.y, -q.z};
+static inline Vec3 add(const Vec3& a, const Vec3& b) {
+  return {a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
-static inline Quat quatMul(const Quat& a, const Quat& b) {
+static inline Vec3 subtract(const Vec3& a, const Vec3& b) {
+  return {a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+static inline Vec3 scale(const Vec3& v, float s) {
+  return {v.x * s, v.y * s, v.z * s};
+}
+
+static inline Vec3 cross(const Vec3& a, const Vec3& b) {
   return {
-    a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-    a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-    a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-    a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w
+    a.y * b.z - a.z * b.y,
+    a.z * b.x - a.x * b.z,
+    a.x * b.y - a.y * b.x
   };
 }
 
-static inline Quat currentQuat() {
+static inline Quaternion currentQuat() {
   return { filter.getQuatW(), filter.getQuatX(), filter.getQuatY(), filter.getQuatZ() };
+}
+
+static Vec3 rotateVector(const Quaternion& q, const Vec3& v) {
+  const Vec3 qv = {q.qX, q.qY, q.qZ};
+  const Vec3 t = scale(cross(qv, v), 2.0f);
+  return add(v, add(scale(t, q.qW), cross(qv, t)));
+}
+
+static Vec3 projectOffAxis(const Vec3& v) {
+  return subtract(v, scale(shaftAxisWorld, dot(v, shaftAxisWorld)));
+}
+
+static Vec3 projectedSensorVector(const Quaternion& q) {
+  return projectOffAxis(rotateVector(q, sensorVector));
 }
 
 // Keep an unwrap helper local so shaftAngleRad stays concise.
@@ -49,12 +65,21 @@ static float unwrapAngle(float wrapped, float& prevWrappedLocal, float& totalLoc
   return totalLocal;
 }
 
-void begin(bool hasMagnetometer, const Vec3& shaftAxisBodyIn, float initialBeta) {
-  hasMag = hasMagnetometer;
+void begin(
+  bool hasMagnetometer,
+  const Vec3& shaftAxisWorldIn,
+  const Vec3& sensorVectorIn,
+  float initialBeta
+) {
   currentBeta = initialBeta;
-  filter.begin(hasMag ? 0.12f : 0.05f);
+  filter.begin(hasMagnetometer ? 0.12f : 0.05f);
   filter.changeBeta(currentBeta);
-  shaftAxisBody = normalize(shaftAxisBodyIn);
+  shaftAxisWorld = normalize(shaftAxisWorldIn);
+  sensorVector = normalize(sensorVectorIn);
+  referenceProjection = projectedSensorVector(currentQuat());
+  refLocked = false;
+  prevWrapped = 0.0f;
+  totalAngleRad = 0.0f;
 }
 
 void changeBeta(float newBeta) {
@@ -72,49 +97,23 @@ void updateIMU(float gx, float gy, float gz, float ax, float ay, float az) {
   filter.updateIMU(gx, gy, gz, ax, ay, az);
 }
 
-float getQuatW() { return filter.getQuatW(); }
-float getQuatX() { return filter.getQuatX(); }
-float getQuatY() { return filter.getQuatY(); }
-float getQuatZ() { return filter.getQuatZ(); }
-
 void lockZeroHere() {
-  qRef = currentQuat();
+  referenceProjection = projectedSensorVector(currentQuat());
   refLocked = true;
   prevWrapped = 0.0f;
   totalAngleRad = 0.0f;
 }
 
 float shaftAngleRad() {
-  const Quat qNow = currentQuat();
-  const Quat qRel = quatMul(quatConj(qRef), qNow);
+  if (!refLocked) {
+    return 0.0f;
+  }
 
-  const float wrapped = getAngleAboutAxis(
-    qRel.w,
-    qRel.x,
-    qRel.y,
-    qRel.z,
-    shaftAxisBody
-  );
-
+  const Vec3 p = projectedSensorVector(currentQuat());
+  const float c = dot(referenceProjection, p);
+  const float s = dot(shaftAxisWorld, cross(referenceProjection, p));
+  const float wrapped = atan2f(s, c);
   return unwrapAngle(wrapped, prevWrapped, totalAngleRad);
-}
-
-void quaternionToEulerDeg(float w, float x, float y, float z, float& rollDeg, float& pitchDeg, float& yawDeg) {
-  const float sinrCosp = 2.0f * (w * x + y * z);
-  const float cosrCosp = 1.0f - 2.0f * (x * x + y * y);
-  const float roll = atan2f(sinrCosp, cosrCosp);
-
-  const float sinp = 2.0f * (w * y - z * x);
-  const float pitch = asinf(constrain(sinp, -1.0f, 1.0f));
-
-  const float sinyCosp = 2.0f * (w * z + x * y);
-  const float cosyCosp = 1.0f - 2.0f * (y * y + z * z);
-  const float yaw = atan2f(sinyCosp, cosyCosp);
-
-  constexpr float RAD_TO_DEG_F = 57.2957795f;
-  rollDeg = roll * RAD_TO_DEG_F;
-  pitchDeg = pitch * RAD_TO_DEG_F;
-  yawDeg = yaw * RAD_TO_DEG_F;
 }
 
 } // namespace Orientation

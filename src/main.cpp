@@ -23,7 +23,7 @@ int16_t raw;
 float voltage;
 float pedalPercent = 0.0f;
 
-// Shaft tilt relative to the body frame: 0 = horizontal, 90 = vertical.
+// Shaft tilt in the world X-Z plane: 0 = horizontal, 90 = vertical.
 constexpr float SHAFT_TILT_DEG = 45.0f;
 
 // Application-level state and buffers. Keep these local to the sketch
@@ -42,7 +42,7 @@ constexpr float RAD_TO_DEG_F = 57.2957795f;
 // -------------------- Setup --------------------
 
 void setup() {
-  // Start I2C and serial as usual.
+  // I2CとSerialの初期化
   Wire.begin();
   Wire.setClock(100000);
 #ifdef WIRE_HAS_TIMEOUT
@@ -60,11 +60,15 @@ void setup() {
   ads.setGain(GAIN_ONE); // 1x gain = +/-4.096V range (default)
   Serial.println("[PEDAL] ADS1115 initialized.");
 
-  // Compute the shaft axis in body coordinates using simple tilt angle.
-  const float theta = SHAFT_TILT_DEG * DEG_TO_RAD;
-  const Vec3 shaftAxisBody = normalize(Vec3(0.0f, cosf(theta), sinf(theta)));
+  // ここからハンドル部の初期化
+  // Compute the shaft axis in world coordinates.
+  const float theta = SHAFT_TILT_DEG * DEG_TO_RAD; // theta: 軸の傾き(rad)
+  // shaftAxisWorld: ワールド座標系での軸ベクトル
+  const Vec3 shaftAxisWorld = normalize(Vec3(cosf(theta), 0.0f, sinf(theta)));
+  // sensorVector: (センサー座標系)センサーの方向ベクトル
+  const Vec3 sensorVector = normalize(Vec3(0.0f, 1.0f, 0.0f));
 
-  // Detect and select IMU on the bus.
+  // IMUの検出と初期化。probeAndSelect()はI2Cアドレスを確認し、利用可能なIMUを選択
   if (!ImuManager::probeAndSelect(IMU_ADDRESS_PRIMARY, IMU_ADDRESS_SECONDARY)) {
     Serial.println("[HANDLE] IMU not found on 0x68/0x69. Check wiring/power.");
     while (true) { delay(1000); }
@@ -76,7 +80,7 @@ void setup() {
   Serial.print("[HANDLE] WHO_AM_I: 0x");
   Serial.println(ImuManager::getWhoAmI(), HEX);
 
-  // Initialize the selected IMU; the driver returns 0 on success.
+  // 利用するIMUを初期化し、キャリブレーションデータを取得
   int err = ImuManager::initImu(calib);
   if (err != 0) {
     Serial.print("[HANDLE] IMU init error: ");
@@ -84,7 +88,7 @@ void setup() {
     while (true) { delay(1000); }
   }
 
-  // Calibrate if possible. Magnetometer calibration is optional.
+  // キャリブレーションの実行。磁気センサーがある場合は磁気キャリブレーションも行う
   const bool hasMag = ImuManager::hasMagnetometer();
   Serial.println("[HANDLE] Start calibration...");
   if (hasMag) {
@@ -93,7 +97,7 @@ void setup() {
     ImuManager::calibrateMag(&calib);
     Serial.println("[HANDLE] Mag calibration done.");
   } else {
-    Serial.println("[HANDLE] No magnetometer detected. Yaw drift cannot be fully removed.");
+    Serial.println("[HANDLE] No magnetometer detected.");
   }
 
   Serial.println("[HANDLE] Accel/Gyro calibration: keep the IMU still and level.");
@@ -101,7 +105,7 @@ void setup() {
   ImuManager::calibrateAccelGyro(&calib);
   Serial.println("[HANDLE] Accel/Gyro calibration done.");
 
-  // Re-initialize with calibration values.
+  // 再度IMUを初期化してキャリブレーションデータを反映
   err = ImuManager::initImu(calib);
   if (err != 0) {
     Serial.print("[HANDLE] IMU re-init error: ");
@@ -109,10 +113,11 @@ void setup() {
     while (true) { delay(1000); }
   }
 
-  // Start orientation filter module with an appropriate beta value.
+  // Orientationモジュールの初期化。磁気センサーがある場合はbetaを大きめに設定
   const float initialBeta = hasMag ? 0.4f : 0.2f;
-  Orientation::begin(hasMag, shaftAxisBody, initialBeta);
+  Orientation::begin(hasMag, shaftAxisWorld, sensorVector, initialBeta);
 
+  // 1秒間の安定化期間を設けてから自動ゼロロックを行う
   startupStableUntil = millis() + 1000; // delay ~1s before auto zero-lock
   Serial.println("[HANDLE] Calibration and filter setup complete.");
   Serial.println("[HANDLE] Send 'z' to zero the current angle. Send 'b'/'B' to tune beta.");
@@ -121,7 +126,7 @@ void setup() {
 // -------------------- Loop --------------------
 
 void loop() {
-  // Handle simple serial commands for runtime tuning and zeroing.
+  // ゼロロックとbeta調整のためのシリアルコマンド処理(ToDo: 後にUnityに移行予定)
   while (Serial.available() > 0) {
     char c = (char)Serial.read();
     if (c == 'z' || c == 'Z') {
@@ -141,13 +146,13 @@ void loop() {
     }
   }
 
-  // Read ADS1115.
+  // ADS1115からペダルのアナログ値を読み取り、電圧とペダルの踏み込み率を計算
   raw = ads.readADC_SingleEnded(0);
   voltage = ads.computeVolts(raw);
   pedalPercent = voltage / 3.3f; // Assuming GAIN_ONE
 
 
-  // Read sensors.
+  // IMUの更新とOrientationフィルタの更新。磁気センサーがある場合は磁気データも使用
   ImuManager::update();
   ImuManager::getAccel(&imuAccel);
   ImuManager::getGyro(&imuGyro);
@@ -166,20 +171,15 @@ void loop() {
     );
   }
 
-  // Auto-lock zero after a short stabilization period if not locked yet.
+  // 自動ゼロロック: 起動後1秒間の安定化期間が過ぎたら、現在の角度をゼロとしてロック
   if (!refLocked && millis() > startupStableUntil) {
     Orientation::lockZeroHere();
     refLocked = true;
   }
 
-  // Compute shaft angle and print a compact CSV-like line for downstream
-  // parsing. Keep this formatting unchanged from the original sketch.
+  // ペダル踏み込み率とハンドル角度をシリアル出力。ハンドル角度はラジアンから度に変換
   const float angleDeg = Orientation::shaftAngleRad() * RAD_TO_DEG_F;
   Serial.printf("%.2f,%.2f\n", pedalPercent, angleDeg);
-
-  // Optional: compute Euler angles for debugging (commented by default).
-  // float rollDeg, pitchDeg, yawDeg;
-  // Orientation::quaternionToEulerDeg(Orientation::getQuatW(), Orientation::getQuatX(), Orientation::getQuatY(), Orientation::getQuatZ(), rollDeg, pitchDeg, yawDeg);
 
   delay(10);
 }
