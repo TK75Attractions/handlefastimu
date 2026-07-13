@@ -102,6 +102,32 @@ void calibrateAccelGyro(calData* calib) {
   imu->calibrateAccelGyro(calib);
 }
 
+void calibrateGyroOnly(calData* calib, uint16_t sampleCount, uint16_t sampleDelayMs) {
+  if (!imu || !calib || sampleCount == 0) return;
+
+  GyroData gyro = {0};
+  float gyroBiasX = 0.0f;
+  float gyroBiasY = 0.0f;
+  float gyroBiasZ = 0.0f;
+
+  for (uint16_t i = 0; i < sampleCount; ++i) {
+    imu->update();
+    imu->getGyro(&gyro);
+    gyroBiasX += gyro.gyroX;
+    gyroBiasY += gyro.gyroY;
+    gyroBiasZ += gyro.gyroZ;
+    delay(sampleDelayMs);
+  }
+
+  calib->accelBias[0] = 0.0f;
+  calib->accelBias[1] = 0.0f;
+  calib->accelBias[2] = 0.0f;
+  calib->gyroBias[0] = gyroBiasX / sampleCount;
+  calib->gyroBias[1] = gyroBiasY / sampleCount;
+  calib->gyroBias[2] = gyroBiasZ / sampleCount;
+  calib->valid = true;
+}
+
 void update() {
   if (!imu) return;
   imu->update();

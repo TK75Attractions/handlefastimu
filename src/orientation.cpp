@@ -2,20 +2,27 @@
 // Implementation of orientation filter management and shaft angle math.
 
 #include "orientation.hpp"
+#include <Arduino.h>
 #include <math.h>
 
 namespace Orientation {
 
 static Madgwick filter;
 static float currentBeta = 0.2f;
+static bool useMag = false;
 
-static Vec3 shaftAxisWorld = {1.0f, 0.0f, 0.0f};
+static Vec3 shaftAxisWorld = {0.0f, 0.0f, 1.0f};
+static Vec3 shaftAxisSensor = {0.0f, 0.0f, 1.0f};
 static Vec3 sensorVector = {0.0f, 1.0f, 0.0f};
 static Vec3 referenceProjection = {0.0f, 1.0f, 0.0f};
 
 static bool refLocked = false;
+static uint32_t lastUpdateUs = 0;
+static float integratedAngleRad = 0.0f;
 static float prevWrapped = 0.0f;
 static float totalAngleRad = 0.0f;
+
+constexpr float DEG_TO_RAD_F = 0.0174532925f;
 
 static inline Vec3 add(const Vec3& a, const Vec3& b) {
   return {a.x + b.x, a.y + b.y, a.z + b.z};
@@ -65,19 +72,42 @@ static float unwrapAngle(float wrapped, float& prevWrappedLocal, float& totalLoc
   return totalLocal;
 }
 
+static void updateIntegratedAngle(float gx, float gy, float gz) {
+  const uint32_t nowUs = micros();
+  if (lastUpdateUs == 0) {
+    lastUpdateUs = nowUs;
+    return;
+  }
+
+  const float dt = (nowUs - lastUpdateUs) * 0.000001f;
+  lastUpdateUs = nowUs;
+
+  if (!refLocked || dt <= 0.0f || dt > 0.1f) {
+    return;
+  }
+
+  const Vec3 gyro = {gx, gy, gz};
+  integratedAngleRad += dot(gyro, shaftAxisSensor) * DEG_TO_RAD_F * dt;
+}
+
 void begin(
   bool hasMagnetometer,
   const Vec3& shaftAxisWorldIn,
+  const Vec3& shaftAxisSensorIn,
   const Vec3& sensorVectorIn,
   float initialBeta
 ) {
+  useMag = hasMagnetometer;
   currentBeta = initialBeta;
   filter.begin(hasMagnetometer ? 0.12f : 0.05f);
   filter.changeBeta(currentBeta);
   shaftAxisWorld = normalize(shaftAxisWorldIn);
+  shaftAxisSensor = normalize(shaftAxisSensorIn);
   sensorVector = normalize(sensorVectorIn);
   referenceProjection = projectedSensorVector(currentQuat());
   refLocked = false;
+  lastUpdateUs = micros();
+  integratedAngleRad = 0.0f;
   prevWrapped = 0.0f;
   totalAngleRad = 0.0f;
 }
@@ -91,15 +121,19 @@ float getBeta() { return currentBeta; }
 
 void updateWithMag(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz) {
   filter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
+  updateIntegratedAngle(gx, gy, gz);
 }
 
 void updateIMU(float gx, float gy, float gz, float ax, float ay, float az) {
   filter.updateIMU(gx, gy, gz, ax, ay, az);
+  updateIntegratedAngle(gx, gy, gz);
 }
 
 void lockZeroHere() {
   referenceProjection = projectedSensorVector(currentQuat());
   refLocked = true;
+  lastUpdateUs = micros();
+  integratedAngleRad = 0.0f;
   prevWrapped = 0.0f;
   totalAngleRad = 0.0f;
 }
@@ -107,6 +141,10 @@ void lockZeroHere() {
 float shaftAngleRad() {
   if (!refLocked) {
     return 0.0f;
+  }
+
+  if (!useMag) {
+    return integratedAngleRad;
   }
 
   const Vec3 p = projectedSensorVector(currentQuat());

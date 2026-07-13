@@ -12,6 +12,7 @@ namespace Orientation {
 void begin(
   bool hasMagnetometer,
   const Vec3& shaftAxisWorld,
+  const Vec3& shaftAxisSensor,
   const Vec3& sensorVector,
   float initialBeta = 0.2f
 );
