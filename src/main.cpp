@@ -181,7 +181,7 @@ void loop() {
 
   // ペダル踏み込み率とハンドル角度をシリアル出力。ハンドル角度はラジアンから度に変換
   const float angleDeg = Orientation::shaftAngleRad() * RAD_TO_DEG_F;
-  Serial.printf("%.2f,%.2f\n", pedalPercent, angleDeg);
+  Serial.printf("%.2f,%.2f\n", pedalPercent, -angleDeg);
 
   delay(10);
 }
