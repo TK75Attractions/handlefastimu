@@ -23,8 +23,7 @@ int16_t raw;
 float voltage;
 float pedalPercent = 0.0f;
 
-// Shaft tilt in the world X-Z plane: 0 = horizontal, 90 = vertical.
-constexpr float SHAFT_TILT_DEG = 45.0f;
+constexpr uint32_t FILTER_SETTLE_MS = 5000;
 
 // Application-level state and buffers. Keep these local to the sketch
 // file so modules own their own internal state.
@@ -61,12 +60,10 @@ void setup() {
   Serial.println("[PEDAL] ADS1115 initialized.");
 
   // ここからハンドル部の初期化
-  // Compute the shaft axis in world coordinates.
-  const float theta = SHAFT_TILT_DEG * DEG_TO_RAD; // theta: 軸の傾き(rad)
-  // shaftAxisWorld: ワールド座標系での軸ベクトル
-  const Vec3 shaftAxisWorld = normalize(Vec3(cosf(theta), 0.0f, sinf(theta)));
-  // sensorVector: (センサー座標系)センサーの方向ベクトル
-  const Vec3 sensorVector = normalize(Vec3(0.0f, 1.0f, 0.0f));
+  // ハンドルの回転軸はIMUのZ軸。
+  const Vec3 shaftAxisWorld = normalize(Vec3(0.0f, 0.0f, 1.0f));
+  const Vec3 shaftAxisSensor = normalize(Vec3(0.0f, 0.0f, 1.0f));
+  const Vec3 sensorVector = normalize(Vec3(1.0f, 0.0f, 0.0f));
 
   // IMUの検出と初期化。probeAndSelect()はI2Cアドレスを確認し、利用可能なIMUを選択
   if (!ImuManager::probeAndSelect(IMU_ADDRESS_PRIMARY, IMU_ADDRESS_SECONDARY)) {
@@ -100,10 +97,10 @@ void setup() {
     Serial.println("[HANDLE] No magnetometer detected.");
   }
 
-  Serial.println("[HANDLE] Accel/Gyro calibration: keep the IMU still and level.");
+  Serial.println("[HANDLE] Gyro calibration: keep the pedal and IMU completely still.");
   delay(3000);
-  ImuManager::calibrateAccelGyro(&calib);
-  Serial.println("[HANDLE] Accel/Gyro calibration done.");
+  ImuManager::calibrateGyroOnly(&calib);
+  Serial.println("[HANDLE] Gyro calibration done.");
 
   // 再度IMUを初期化してキャリブレーションデータを反映
   err = ImuManager::initImu(calib);
@@ -115,10 +112,10 @@ void setup() {
 
   // Orientationモジュールの初期化。磁気センサーがある場合はbetaを大きめに設定
   const float initialBeta = hasMag ? 0.4f : 0.2f;
-  Orientation::begin(hasMag, shaftAxisWorld, sensorVector, initialBeta);
+  Orientation::begin(hasMag, shaftAxisWorld, shaftAxisSensor, sensorVector, initialBeta);
 
-  // 1秒間の安定化期間を設けてから自動ゼロロックを行う
-  startupStableUntil = millis() + 1000; // delay ~1s before auto zero-lock
+  // フィルタが収束してから自動ゼロロックする。
+  startupStableUntil = millis() + FILTER_SETTLE_MS;
   Serial.println("[HANDLE] Calibration and filter setup complete.");
   Serial.println("[HANDLE] Send 'z' to zero the current angle. Send 'b'/'B' to tune beta.");
 }
@@ -171,15 +168,23 @@ void loop() {
     );
   }
 
-  // 自動ゼロロック: 起動後1秒間の安定化期間が過ぎたら、現在の角度をゼロとしてロック
+  // 自動ゼロロック: フィルタ安定化後、現在の角度をゼロとしてロック
   if (!refLocked && millis() > startupStableUntil) {
     Orientation::lockZeroHere();
     refLocked = true;
   }
 
+  if (!refLocked) {
+    delay(10);
+    return;
+  }
+
   // ペダル踏み込み率とハンドル角度をシリアル出力。ハンドル角度はラジアンから度に変換
   const float angleDeg = Orientation::shaftAngleRad() * RAD_TO_DEG_F;
-  Serial.printf("%.2f,%.2f\n", pedalPercent, angleDeg);
+  Serial.printf("%.2f,%.2f", pedalPercent, -angleDeg);
+  // デバッグ用: IMUの生データも出力
+  Serial.printf(" || [Log] Accel X: %.2f, Y: %.2f, Z: %.2f | GYRO X: %.2f, Y: %.2f, Z: %.2f", imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ, imuGyro.gyroX, imuGyro.gyroY, imuGyro.gyroZ);
+  Serial.println("");
 
   delay(10);
 }

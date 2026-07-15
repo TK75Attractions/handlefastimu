@@ -28,6 +28,7 @@ int initImu(calData& calib);
 // These wrap the FastIMU calls and will block until calibration completes.
 void calibrateMag(calData* calib);
 void calibrateAccelGyro(calData* calib);
+void calibrateGyroOnly(calData* calib, uint16_t sampleCount = 400, uint16_t sampleDelayMs = 5);
 
 // Update sensor internal state and copy latest sensor samples to outputs.
 void update();
