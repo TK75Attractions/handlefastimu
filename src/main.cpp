@@ -181,7 +181,10 @@ void loop() {
 
   // ペダル踏み込み率とハンドル角度をシリアル出力。ハンドル角度はラジアンから度に変換
   const float angleDeg = Orientation::shaftAngleRad() * RAD_TO_DEG_F;
-  Serial.printf("%.2f,%.2f\n", pedalPercent, -angleDeg);
+  Serial.printf("%.2f,%.2f", pedalPercent, -angleDeg);
+  // デバッグ用: IMUの生データも出力
+  Serial.printf(" || [Log] Accel X: %.2f, Y: %.2f, Z: %.2f | GYRO X: %.2f, Y: %.2f, Z: %.2f", imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ, imuGyro.gyroX, imuGyro.gyroY, imuGyro.gyroZ);
+  Serial.println("");
 
   delay(10);
 }
