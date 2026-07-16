@@ -24,8 +24,13 @@ int16_t raw;
 float voltage;
 float pedalPercent = 0.0f;
 
+// Tilt of the handle/IMU Z axis away from world vertical.
+// 0 = vertical Z axis, 90 = horizontal Z axis tilted toward world +X.
+constexpr float SHAFT_Z_TILT_DEG = 90.0f;
 constexpr uint32_t FILTER_SETTLE_MS = 5000;
+constexpr uint32_t RECONNECT_FILTER_SETTLE_MS = 1200;
 constexpr uint32_t RECONNECT_RETRY_MS = 1000;
+constexpr uint16_t FILTER_SETTLE_SAMPLE_DELAY_MS = 5;
 
 // Application-level state and buffers. Keep these local to the sketch
 // file so modules own their own internal state.
@@ -35,7 +40,6 @@ static GyroData imuGyro;
 static MagData imuMag;
 
 static bool refLocked = false;
-static uint32_t startupStableUntil = 0;
 static bool i2cLinkActive = false;
 static uint32_t nextReconnectAttemptMs = 0;
 static bool hasMag = false;
@@ -59,6 +63,66 @@ static bool isI2CBusHealthy() {
   }
 #endif
   return probeI2CAddress(ImuManager::getImuAddress()) && probeI2CAddress(ADS_ADDRESS);
+}
+
+static bool consumeWireTimeout() {
+#ifdef WIRE_HAS_TIMEOUT
+  if (Wire.getWireTimeoutFlag()) {
+    Wire.clearWireTimeoutFlag();
+    return true;
+  }
+#endif
+  return false;
+}
+
+static bool updateOrientationFromImu() {
+  ImuManager::update();
+  ImuManager::getAccel(&imuAccel);
+  ImuManager::getGyro(&imuGyro);
+
+  if (hasMag) {
+    ImuManager::getMag(&imuMag);
+    Orientation::updateWithMag(
+      imuGyro.gyroX, imuGyro.gyroY, imuGyro.gyroZ,
+      imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ,
+      imuMag.magX, imuMag.magY, imuMag.magZ
+    );
+  } else {
+    Orientation::updateIMU(
+      imuGyro.gyroX, imuGyro.gyroY, imuGyro.gyroZ,
+      imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ
+    );
+  }
+
+  return !consumeWireTimeout();
+}
+
+static bool settleOrientationFilter(uint32_t settleMs, bool resetFilter) {
+  if (resetFilter) {
+    Orientation::resetFilterForResync();
+  }
+
+  const float restoreBeta = Orientation::getBeta();
+  if (hasMag) {
+    Orientation::changeBeta(1.0f);
+  }
+
+  if (!isI2CBusHealthy()) {
+    Orientation::changeBeta(restoreBeta);
+    return false;
+  }
+
+  const uint32_t startMs = millis();
+  do {
+    if (!updateOrientationFromImu()) {
+      Orientation::changeBeta(restoreBeta);
+      return false;
+    }
+    delay(FILTER_SETTLE_SAMPLE_DELAY_MS);
+  } while ((uint32_t)(millis() - startMs) < settleMs);
+
+  Orientation::changeBeta(restoreBeta);
+  return isI2CBusHealthy();
 }
 
 static void markI2CLost() {
@@ -120,15 +184,16 @@ static bool initializeHandle(bool performCalibration, bool resetOrientation = fa
   if (performCalibration) {
     initialBeta = hasMag ? 0.4f : 0.2f;
     Orientation::begin(hasMag, shaftAxisWorld, shaftAxisSensor, sensorVector, initialBeta);
-    startupStableUntil = millis() + FILTER_SETTLE_MS;
-    refLocked = false;
+    if (!settleOrientationFilter(FILTER_SETTLE_MS, false)) {
+      return false;
+    }
+    Orientation::lockZeroHere();
+    refLocked = true;
   } else if (resetOrientation) {
     initialBeta = hasMag ? 0.4f : 0.2f;
     Orientation::begin(hasMag, shaftAxisWorld, shaftAxisSensor, sensorVector, initialBeta);
-    startupStableUntil = 0;
     refLocked = wasZeroLocked;
   } else {
-    startupStableUntil = 0;
     refLocked = wasZeroLocked;
   }
   i2cLinkActive = true;
@@ -158,7 +223,20 @@ static bool tryReconnect() {
     return false;
   }
 
-  Serial.println("[HANDLE] I2C link restored. Resuming output.");
+  if (!settleOrientationFilter(RECONNECT_FILTER_SETTLE_MS, true)) {
+    i2cLinkActive = false;
+    nextReconnectAttemptMs = millis() + RECONNECT_RETRY_MS;
+    return false;
+  }
+
+  if (!hasMag && refLocked && !Orientation::hasAbsoluteShaftReference()) {
+    refLocked = false;
+    Serial.println("[HANDLE] I2C link restored, but this IMU has no magnetometer.");
+    Serial.println("[HANDLE] Shaft Z axis is too close to gravity to recover rotation. Send 'z' to zero again.");
+    return true;
+  }
+
+  Serial.println("[HANDLE] I2C link restored and orientation re-synced. Resuming output.");
   return true;
 }
 
@@ -184,8 +262,9 @@ void setup() {
   Serial.println("[PEDAL] ADS1115 initialized.");
 
   // ここからハンドル部の初期化
-  // ハンドルの回転軸はIMUのZ軸。
-  shaftAxisWorld = normalize(Vec3(0.0f, 0.0f, 1.0f));
+  // ハンドルの回転軸はIMUのZ軸。SHAFT_Z_TILT_DEGで世界Z軸からの傾きを指定する。
+  const float shaftTilt = SHAFT_Z_TILT_DEG * DEG_TO_RAD;
+  shaftAxisWorld = normalize(Vec3(sinf(shaftTilt), 0.0f, cosf(shaftTilt)));
   shaftAxisSensor = normalize(Vec3(0.0f, 0.0f, 1.0f));
   sensorVector = normalize(Vec3(1.0f, 0.0f, 0.0f));
 
@@ -240,50 +319,19 @@ void loop() {
   voltage = ads.computeVolts(raw);
   pedalPercent = voltage / 3.3f; // Assuming GAIN_ONE
 
-#ifdef WIRE_HAS_TIMEOUT
-  if (Wire.getWireTimeoutFlag()) {
-    Wire.clearWireTimeoutFlag();
+  if (consumeWireTimeout()) {
     markI2CLost();
     delay(10);
     return;
   }
-#endif
 
 
   // IMUの更新とOrientationフィルタの更新。磁気センサーがある場合は磁気データも使用
-  ImuManager::update();
-  ImuManager::getAccel(&imuAccel);
-  ImuManager::getGyro(&imuGyro);
-
-  if (ImuManager::hasMagnetometer()) {
-    ImuManager::getMag(&imuMag);
-    Orientation::updateWithMag(
-      imuGyro.gyroX, imuGyro.gyroY, imuGyro.gyroZ,
-      imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ,
-      imuMag.magX, imuMag.magY, imuMag.magZ
-    );
-  } else {
-    Orientation::updateIMU(
-      imuGyro.gyroX, imuGyro.gyroY, imuGyro.gyroZ,
-      imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ
-    );
-  }
-
-#ifdef WIRE_HAS_TIMEOUT
-  if (Wire.getWireTimeoutFlag()) {
-    Wire.clearWireTimeoutFlag();
+  if (!updateOrientationFromImu()) {
     markI2CLost();
     delay(10);
     return;
   }
-#endif
-
-  // 自動ゼロロック: フィルタ安定化後、現在の角度をゼロとしてロック
-  if (!refLocked && millis() > startupStableUntil) {
-    Orientation::lockZeroHere();
-    refLocked = true;
-  }
-
   if (!refLocked) {
     delay(10);
     return;
