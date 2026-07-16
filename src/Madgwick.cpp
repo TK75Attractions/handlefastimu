@@ -13,6 +13,16 @@ Madgwick::Madgwick() {
   last_update = now;
 }
 
+void Madgwick::reset() {
+  now = micros();
+  last_update = now;
+  delta_t = 0.0f;
+  q0 = 1.0f;
+  q1 = 0.0f;
+  q2 = 0.0f;
+  q3 = 0.0f;
+}
+
 /*
     Madgwick::update
     内容: 加速度、ジャイロ、磁気センサの値を使用してクォータニオンを更新する。

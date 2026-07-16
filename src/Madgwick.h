@@ -7,6 +7,8 @@ class Madgwick {
 public:
   Madgwick();
 
+  void reset();
+
   void changeBeta(float newBeta) {
     beta = newBeta;
   }
