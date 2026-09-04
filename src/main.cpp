@@ -24,9 +24,6 @@ int16_t raw;
 float voltage;
 float pedalPercent = 0.0f;
 
-// Tilt of the handle/IMU Z axis away from world vertical.
-// 0 = vertical Z axis, 90 = horizontal Z axis tilted toward world +X.
-constexpr float SHAFT_Z_TILT_DEG = 90.0f;
 constexpr uint32_t FILTER_SETTLE_MS = 5000;
 constexpr uint32_t RECONNECT_FILTER_SETTLE_MS = 1200;
 constexpr uint32_t RECONNECT_RETRY_MS = 1000;
@@ -43,9 +40,8 @@ static bool refLocked = false;
 static bool i2cLinkActive = false;
 static uint32_t nextReconnectAttemptMs = 0;
 static bool hasMag = false;
-static Vec3 shaftAxisWorld;
 static Vec3 shaftAxisSensor;
-static Vec3 sensorVector;
+static Vec3 zeroGravityDirectionSensor;
 static float initialBeta = 0.2f;
 
 // Small helper constant for radians→degrees conversion used below.
@@ -183,15 +179,15 @@ static bool initializeHandle(bool performCalibration, bool resetOrientation = fa
 
   if (performCalibration) {
     initialBeta = hasMag ? 0.4f : 0.2f;
-    Orientation::begin(hasMag, shaftAxisWorld, shaftAxisSensor, sensorVector, initialBeta);
+    Orientation::begin(hasMag, shaftAxisSensor, zeroGravityDirectionSensor, initialBeta);
     if (!settleOrientationFilter(FILTER_SETTLE_MS, false)) {
       return false;
     }
-    Orientation::lockZeroHere();
+    Orientation::restartAngleTracking();
     refLocked = true;
   } else if (resetOrientation) {
     initialBeta = hasMag ? 0.4f : 0.2f;
-    Orientation::begin(hasMag, shaftAxisWorld, shaftAxisSensor, sensorVector, initialBeta);
+    Orientation::begin(hasMag, shaftAxisSensor, zeroGravityDirectionSensor, initialBeta);
     refLocked = wasZeroLocked;
   } else {
     refLocked = wasZeroLocked;
@@ -200,7 +196,8 @@ static bool initializeHandle(bool performCalibration, bool resetOrientation = fa
   nextReconnectAttemptMs = 0;
 
   Serial.println("[HANDLE] Calibration and filter setup complete.");
-  Serial.println("[HANDLE] Send 'z' to zero the current angle. Send 'b'/'B' to tune beta.");
+  Serial.println("[HANDLE] Angle zero: sensor Y horizontal, sensor +X aligned with sensed gravity.");
+  Serial.println("[HANDLE] Send 'z' to restart cumulative-angle tracking. Send 'b'/'B' to tune beta.");
   return true;
 }
 
@@ -229,10 +226,10 @@ static bool tryReconnect() {
     return false;
   }
 
-  if (!hasMag && refLocked && !Orientation::hasAbsoluteShaftReference()) {
+  if (refLocked && !Orientation::hasAbsoluteShaftReference()) {
     refLocked = false;
-    Serial.println("[HANDLE] I2C link restored, but this IMU has no magnetometer.");
-    Serial.println("[HANDLE] Shaft Z axis is too close to gravity to recover rotation. Send 'z' to zero again.");
+    Serial.println("[HANDLE] I2C link restored, but shaft Z is too close to gravity.");
+    Serial.println("[HANDLE] Move shaft Z away from gravity and send 'z' to restart angle tracking.");
     return true;
   }
 
@@ -262,11 +259,10 @@ void setup() {
   Serial.println("[PEDAL] ADS1115 initialized.");
 
   // ここからハンドル部の初期化
-  // ハンドルの回転軸はIMUのZ軸。SHAFT_Z_TILT_DEGで世界Z軸からの傾きを指定する。
-  const float shaftTilt = SHAFT_Z_TILT_DEG * DEG_TO_RAD;
-  shaftAxisWorld = normalize(Vec3(sinf(shaftTilt), 0.0f, cosf(shaftTilt)));
+  // ハンドルの回転軸はIMUのZ軸。Y軸が水平かつ+X軸が重力基準方向を
+  // 向く姿勢を、起動時の姿勢に関係なく角度0とする。
   shaftAxisSensor = normalize(Vec3(0.0f, 0.0f, 1.0f));
-  sensorVector = normalize(Vec3(1.0f, 0.0f, 0.0f));
+  zeroGravityDirectionSensor = normalize(Vec3(1.0f, 0.0f, 0.0f));
 
   // IMUの検出と初期化。probeAndSelect()はI2Cアドレスを確認し、利用可能なIMUを選択
   if (!initializeHandle(true)) {
@@ -282,9 +278,9 @@ void loop() {
   while (Serial.available() > 0) {
     char c = (char)Serial.read();
     if (c == 'z' || c == 'Z') {
-      Orientation::lockZeroHere();
+      Orientation::restartAngleTracking();
       refLocked = true;
-      Serial.println("[HANDLE] Zero locked.");
+      Serial.println("[HANDLE] Cumulative-angle tracking restarted from the fixed gravity reference.");
     } else if (c == 'b') {
       float b = Orientation::getBeta() + 0.05f;
       if (b > 1.0f) b = 1.0f;

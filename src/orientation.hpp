@@ -9,11 +9,13 @@
 namespace Orientation {
 
 // Initialize filter parameters and provide shaft geometry.
+// The fixed zero is the pose where zeroGravityDirectionSensor points along
+// the gravity estimate; for this project that is sensor +X, which makes
+// sensor Y horizontal while sensor Z is the rotation axis.
 void begin(
   bool hasMagnetometer,
-  const Vec3& shaftAxisWorld,
   const Vec3& shaftAxisSensor,
-  const Vec3& sensorVector,
+  const Vec3& zeroGravityDirectionSensor,
   float initialBeta = 0.2f
 );
 
@@ -21,7 +23,7 @@ void begin(
 void changeBeta(float newBeta);
 float getBeta();
 
-// Reset only the live filter state while keeping the locked zero reference.
+// Reset only the live filter state while keeping the fixed gravity reference.
 void resetFilterForResync();
 
 // True when the current setup has an absolute reference for shaft angle.
@@ -31,10 +33,11 @@ bool hasAbsoluteShaftReference();
 void updateWithMag(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz);
 void updateIMU(float gx, float gy, float gz, float ax, float ay, float az);
 
-// Lock the current orientation as the zero reference for shaft angle.
-void lockZeroHere();
+// Start/restart cumulative-angle tracking. The zero reference itself remains
+// fixed by gravity and does not depend on the current or startup pose.
+void restartAngleTracking();
 
-// Compute cumulative shaft angle in radians since the last lock.
+// Compute cumulative shaft angle in radians relative to the fixed gravity zero.
 float shaftAngleRad();
 
 } // namespace Orientation
