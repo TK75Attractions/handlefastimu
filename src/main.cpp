@@ -52,6 +52,38 @@ static bool probeI2CAddress(uint8_t address) {
   return Wire.endTransmission(true) == 0;
 }
 
+static void scanI2CBus() {
+  uint8_t deviceCount = 0;
+
+  Serial.println("[I2C] Scanning all addresses...");
+
+  for (uint8_t address = 1; address < 127; ++address) {
+    Wire.beginTransmission(address);
+    const uint8_t error = Wire.endTransmission(true);
+
+    if (error == 0) {
+      Serial.print("[I2C] Device found at address 0x");
+      if (address < 0x10) {
+        Serial.print('0');
+      }
+      Serial.println(address, HEX);
+      ++deviceCount;
+    } else if (error == 4) {
+      Serial.print("[I2C] Unknown error at address 0x");
+      if (address < 0x10) {
+        Serial.print('0');
+      }
+      Serial.println(address, HEX);
+    }
+  }
+
+  if (deviceCount == 0) {
+    Serial.println("[I2C] No devices found.");
+  } else {
+    Serial.printf("[I2C] Scan complete. %u device(s) found.\n", deviceCount);
+  }
+}
+
 static bool isI2CBusHealthy() {
 #ifdef WIRE_HAS_TIMEOUT
   if (Wire.getWireTimeoutFlag()) {
@@ -196,7 +228,7 @@ static bool initializeHandle(bool performCalibration, bool resetOrientation = fa
   nextReconnectAttemptMs = 0;
 
   Serial.println("[HANDLE] Calibration and filter setup complete.");
-  Serial.println("[HANDLE] Angle zero: sensor Y horizontal, sensor +X aligned with sensed gravity.");
+  Serial.println("[HANDLE] Angle zero: sensor Y horizontal, sensor -X aligned with sensed gravity.");
   Serial.println("[HANDLE] Send 'z' to restart cumulative-angle tracking. Send 'b'/'B' to tune beta.");
   return true;
 }
@@ -259,14 +291,15 @@ void setup() {
   Serial.println("[PEDAL] ADS1115 initialized.");
 
   // ここからハンドル部の初期化
-  // ハンドルの回転軸はIMUのZ軸。Y軸が水平かつ+X軸が重力基準方向を
+  // ハンドルの回転軸はIMUのZ軸。Y軸が水平かつ-X軸が重力基準方向を
   // 向く姿勢を、起動時の姿勢に関係なく角度0とする。
   shaftAxisSensor = normalize(Vec3(0.0f, 0.0f, 1.0f));
-  zeroGravityDirectionSensor = normalize(Vec3(1.0f, 0.0f, 0.0f));
+  zeroGravityDirectionSensor = normalize(Vec3(-1.0f, 0.0f, 0.0f));
 
   // IMUの検出と初期化。probeAndSelect()はI2Cアドレスを確認し、利用可能なIMUを選択
   if (!initializeHandle(true)) {
     Serial.println("[HANDLE] Initial I2C setup failed. Check wiring/power.");
+    scanI2CBus();
     while (true) { delay(1000); }
   }
 }
