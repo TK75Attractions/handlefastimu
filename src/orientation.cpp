@@ -11,14 +11,11 @@ static Madgwick filter;
 static float currentBeta = 0.2f;
 static bool useMag = false;
 
-static Vec3 shaftAxisWorld = {0.0f, 0.0f, 1.0f};
 static Vec3 shaftAxisSensor = {0.0f, 0.0f, 1.0f};
-static Vec3 sensorVector = {0.0f, 1.0f, 0.0f};
-static Vec3 referenceProjection = {0.0f, 1.0f, 0.0f};
+static Vec3 zeroGravityProjection = {1.0f, 0.0f, 0.0f};
 static Vec3 latestGravityProjection = {0.0f, 0.0f, 0.0f};
 
 static bool refLocked = false;
-static bool useGravityAngle = false;
 static bool latestGravityProjectionUsable = false;
 static uint32_t lastUpdateUs = 0;
 static float integratedAngleRad = 0.0f;
@@ -27,10 +24,6 @@ static float totalAngleRad = 0.0f;
 
 constexpr float DEG_TO_RAD_F = 0.0174532925f;
 constexpr float MIN_GRAVITY_PROJECTION_SQ = 0.0025f;
-
-static inline Vec3 add(const Vec3& a, const Vec3& b) {
-  return {a.x + b.x, a.y + b.y, a.z + b.z};
-}
 
 static inline Vec3 subtract(const Vec3& a, const Vec3& b) {
   return {a.x - b.x, a.y - b.y, a.z - b.z};
@@ -48,35 +41,30 @@ static inline Vec3 cross(const Vec3& a, const Vec3& b) {
   };
 }
 
-static inline Quaternion currentQuat() {
-  return { filter.getQuatW(), filter.getQuatX(), filter.getQuatY(), filter.getQuatZ() };
-}
-
-static Vec3 rotateVector(const Quaternion& q, const Vec3& v) {
-  const Vec3 qv = {q.qX, q.qY, q.qZ};
-  const Vec3 t = scale(cross(qv, v), 2.0f);
-  return add(v, add(scale(t, q.qW), cross(qv, t)));
-}
-
-static Vec3 projectOffAxis(const Vec3& v) {
-  return subtract(v, scale(shaftAxisWorld, dot(v, shaftAxisWorld)));
-}
-
 static Vec3 projectOffSensorAxis(const Vec3& v) {
   return subtract(v, scale(shaftAxisSensor, dot(v, shaftAxisSensor)));
-}
-
-static Vec3 projectedSensorVector(const Quaternion& q) {
-  return projectOffAxis(rotateVector(q, sensorVector));
 }
 
 static bool isUsableProjection(const Vec3& v) {
   return dot(v, v) > MIN_GRAVITY_PROJECTION_SQ;
 }
 
-static void updateGravityProjection(float ax, float ay, float az) {
-  const Vec3 accel = normalize(Vec3(ax, ay, az));
-  latestGravityProjection = projectOffSensorAxis(accel);
+static void updateGravityProjectionFromFilter() {
+  const float qw = filter.getQuatW();
+  const float qx = filter.getQuatX();
+  const float qy = filter.getQuatY();
+  const float qz = filter.getQuatZ();
+
+  // Gravity direction predicted by the Madgwick quaternion, expressed in
+  // sensor coordinates. This is the same gravity model used by the filter's
+  // accelerometer correction step.
+  const Vec3 gravitySensor = {
+    2.0f * (qx * qz - qw * qy),
+    2.0f * (qw * qx + qy * qz),
+    qw * qw - qx * qx - qy * qy + qz * qz
+  };
+
+  latestGravityProjection = projectOffSensorAxis(gravitySensor);
   latestGravityProjectionUsable = isUsableProjection(latestGravityProjection);
   if (latestGravityProjectionUsable) {
     latestGravityProjection = normalize(latestGravityProjection);
@@ -113,9 +101,8 @@ static void updateIntegratedAngle(float gx, float gy, float gz) {
 
 void begin(
   bool hasMagnetometer,
-  const Vec3& shaftAxisWorldIn,
   const Vec3& shaftAxisSensorIn,
-  const Vec3& sensorVectorIn,
+  const Vec3& zeroGravityDirectionSensorIn,
   float initialBeta
 ) {
   useMag = hasMagnetometer;
@@ -123,13 +110,10 @@ void begin(
   filter.reset();
   filter.begin(hasMagnetometer ? 0.12f : 0.05f);
   filter.changeBeta(currentBeta);
-  shaftAxisWorld = normalize(shaftAxisWorldIn);
   shaftAxisSensor = normalize(shaftAxisSensorIn);
-  sensorVector = normalize(sensorVectorIn);
-  referenceProjection = projectedSensorVector(currentQuat());
+  zeroGravityProjection = normalize(projectOffSensorAxis(zeroGravityDirectionSensorIn));
   latestGravityProjection = {0.0f, 0.0f, 0.0f};
   refLocked = false;
-  useGravityAngle = false;
   latestGravityProjectionUsable = false;
   lastUpdateUs = micros();
   integratedAngleRad = 0.0f;
@@ -153,25 +137,18 @@ void resetFilterForResync() {
 }
 
 void updateWithMag(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz) {
-  updateGravityProjection(ax, ay, az);
   filter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
+  updateGravityProjectionFromFilter();
   updateIntegratedAngle(gx, gy, gz);
 }
 
 void updateIMU(float gx, float gy, float gz, float ax, float ay, float az) {
-  updateGravityProjection(ax, ay, az);
   filter.updateIMU(gx, gy, gz, ax, ay, az);
+  updateGravityProjectionFromFilter();
   updateIntegratedAngle(gx, gy, gz);
 }
 
-void lockZeroHere() {
-  if (useMag) {
-    referenceProjection = projectedSensorVector(currentQuat());
-    useGravityAngle = false;
-  } else {
-    referenceProjection = latestGravityProjection;
-    useGravityAngle = latestGravityProjectionUsable;
-  }
+void restartAngleTracking() {
   refLocked = true;
   lastUpdateUs = micros();
   integratedAngleRad = 0.0f;
@@ -180,7 +157,7 @@ void lockZeroHere() {
 }
 
 bool hasAbsoluteShaftReference() {
-  return useMag || (useGravityAngle && latestGravityProjectionUsable);
+  return refLocked && latestGravityProjectionUsable;
 }
 
 float shaftAngleRad() {
@@ -188,23 +165,19 @@ float shaftAngleRad() {
     return 0.0f;
   }
 
-  if (!useMag) {
-    if (useGravityAngle) {
-      if (latestGravityProjectionUsable) {
-        const float c = dot(referenceProjection, latestGravityProjection);
-        const float s = -dot(shaftAxisSensor, cross(referenceProjection, latestGravityProjection));
-        const float wrapped = atan2f(s, c);
-        return unwrapAngle(wrapped, prevWrapped, totalAngleRad);
-      }
-    }
-    return integratedAngleRad;
+  if (latestGravityProjectionUsable) {
+    const float c = dot(zeroGravityProjection, latestGravityProjection);
+    const float s = -dot(shaftAxisSensor, cross(zeroGravityProjection, latestGravityProjection));
+    const float wrapped = atan2f(s, c);
+    const float absoluteAngle = unwrapAngle(wrapped, prevWrapped, totalAngleRad);
+    integratedAngleRad = absoluteAngle;
+    return absoluteAngle;
   }
 
-  const Vec3 p = projectedSensorVector(currentQuat());
-  const float c = dot(referenceProjection, p);
-  const float s = dot(shaftAxisWorld, cross(referenceProjection, p));
-  const float wrapped = atan2f(s, c);
-  return unwrapAngle(wrapped, prevWrapped, totalAngleRad);
+  // When the shaft is momentarily too close to gravity, the projected gravity
+  // vector cannot define an angle. Continue from the shaft-axis gyro integral
+  // until an absolute gravity angle becomes usable again.
+  return integratedAngleRad;
 }
 
 } // namespace Orientation
