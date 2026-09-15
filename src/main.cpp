@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <math.h>
 #include <Adafruit_ADS1X15.h>
 #include "imu_manager.hpp"
 #include "orientation.hpp"
@@ -10,6 +11,12 @@ constexpr uint8_t I2C_SCL = 22;
 constexpr uint8_t HANDLE1_ADDRESS = 0x68;
 constexpr uint8_t HANDLE2_ADDRESS = 0x69;
 constexpr uint8_t ADS_ADDRESS = 0x48;
+// GPIO27 reaches A0 and A1 through separate 100 kOhm resistors.
+// A low-impedance pedal holds its voltage; an open input follows the probe.
+constexpr uint8_t PEDAL_PROBE_PIN = 27;
+constexpr uint32_t PEDAL_PROBE_INTERVAL_MS = 250;
+constexpr uint16_t PEDAL_PROBE_SETTLE_MS = 20;
+constexpr float PEDAL_OPEN_DELTA_VOLTS = 0.8f;
 constexpr uint32_t FILTER_SETTLE_MS = 5000;
 constexpr uint32_t RECONNECT_SETTLE_MS = 1200;
 constexpr uint32_t RECONNECT_RETRY_MS = 1000;
@@ -43,6 +50,9 @@ HandleInput handles[] = {HandleInput(HANDLE1_ADDRESS), HandleInput(HANDLE2_ADDRE
 bool adsOnline = false;
 uint32_t adsRetryAtMs = 0;
 float pedals[2] = {};
+bool pedalConnected[2] = {};
+uint32_t nextPedalProbeMs = 0;
+uint8_t nextPedalProbeChannel = 0;
 
 static bool probe(TwoWire& bus, uint8_t address) {
   bus.beginTransmission(address);
@@ -166,6 +176,10 @@ static void updatePedals() {
       return;
     }
     ads.setGain(GAIN_ONE);
+    pedalConnected[0] = false;
+    pedalConnected[1] = false;
+    nextPedalProbeMs = millis();
+    nextPedalProbeChannel = 0;
     Serial.println("[PEDAL] ADS1115 ready: A0=pedal1, A1=pedal2.");
   }
   if (!probe(Wire, ADS_ADDRESS)) {
@@ -182,6 +196,35 @@ static void updatePedals() {
     }
     pedals[channel] = constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f);
   }
+
+  if (!due(millis(), nextPedalProbeMs)) return;
+
+  const uint8_t channel = nextPedalProbeChannel;
+  nextPedalProbeChannel ^= 1;
+  nextPedalProbeMs = millis() + PEDAL_PROBE_INTERVAL_MS;
+
+  digitalWrite(PEDAL_PROBE_PIN, HIGH);
+  pinMode(PEDAL_PROBE_PIN, OUTPUT);
+  delay(PEDAL_PROBE_SETTLE_MS);
+  const int16_t highRaw = ads.readADC_SingleEnded(channel);
+  const bool highOk = !consumeTimeout(Wire) && probe(Wire, ADS_ADDRESS);
+
+  digitalWrite(PEDAL_PROBE_PIN, LOW);
+  delay(PEDAL_PROBE_SETTLE_MS);
+  const int16_t lowRaw = ads.readADC_SingleEnded(channel);
+  const bool lowOk = !consumeTimeout(Wire) && probe(Wire, ADS_ADDRESS);
+  pinMode(PEDAL_PROBE_PIN, INPUT); // High impedance between probes.
+
+  if (!highOk || !lowOk) {
+    adsOnline = false;
+    pedalConnected[0] = false;
+    pedalConnected[1] = false;
+    adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
+    return;
+  }
+
+  const float deltaVolts = fabsf(ads.computeVolts(highRaw) - ads.computeVolts(lowRaw));
+  pedalConnected[channel] = deltaVolts < PEDAL_OPEN_DELTA_VOLTS;
 }
 
 void setup() {
@@ -189,6 +232,7 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(100000);
   Wire.setTimeOut(20);
+  pinMode(PEDAL_PROBE_PIN, INPUT);
   Serial.println("[INPUT] CSV: pedal1,handle1_deg,pedal2,handle2_deg");
   // Complete blocking startup calibrations before either live filter starts.
   for (size_t i = 0; i < 2; ++i) {
@@ -223,9 +267,9 @@ void loop() {
   // Missing inputs are explicit; never emit an old value as a live reading.
   const float missing = NAN;
   Serial.printf("%.2f,%.2f,%.2f,%.2f\n",
-    adsOnline ? pedals[0] : missing,
+    adsOnline && pedalConnected[0] ? pedals[0] : missing,
     handles[0].online && !handles[0].settling ? handles[0].angleDeg : missing,
-    adsOnline ? pedals[1] : missing,
+    adsOnline && pedalConnected[1] ? pedals[1] : missing,
     handles[1].online && !handles[1].settling ? handles[1].angleDeg : missing);
   delay(10);
 }
