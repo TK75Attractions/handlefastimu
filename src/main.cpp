@@ -1,377 +1,231 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <math.h>
 #include <Adafruit_ADS1X15.h>
-
-// Split responsibilities: IMU hardware handling is in imu_manager, while
-// filter/quaternion math is in orientation. This keeps this file focused
-// on high-level application flow (setup/loop) and makes it easier to add
-// new features.
-
 #include "imu_manager.hpp"
 #include "orientation.hpp"
 
-// Necessary I2C addresses; change if your hardware uses other pins.
-#define IMU_ADDRESS_PRIMARY 0x68
-#define IMU_ADDRESS_SECONDARY 0x69
-#define ADS_ADDRESS 0x48
-
-
-// ADS
-Adafruit_ADS1115 ads;
-
-int16_t raw;
-float voltage;
-float pedalPercent = 0.0f;
-
+// All inputs share one bus; AD0 selects each MPU6050 address.
+constexpr uint8_t I2C_SDA = 21;
+constexpr uint8_t I2C_SCL = 22;
+constexpr uint8_t HANDLE1_ADDRESS = 0x68;
+constexpr uint8_t HANDLE2_ADDRESS = 0x69;
+constexpr uint8_t ADS_ADDRESS = 0x48;
 constexpr uint32_t FILTER_SETTLE_MS = 5000;
-constexpr uint32_t RECONNECT_FILTER_SETTLE_MS = 1200;
+constexpr uint32_t RECONNECT_SETTLE_MS = 1200;
 constexpr uint32_t RECONNECT_RETRY_MS = 1000;
-constexpr uint16_t FILTER_SETTLE_SAMPLE_DELAY_MS = 5;
-
-// Application-level state and buffers. Keep these local to the sketch
-// file so modules own their own internal state.
-static calData calib = {0};
-static AccelData imuAccel;
-static GyroData imuGyro;
-static MagData imuMag;
-
-static bool refLocked = false;
-static bool i2cLinkActive = false;
-static uint32_t nextReconnectAttemptMs = 0;
-static bool hasMag = false;
-static Vec3 shaftAxisSensor;
-static Vec3 zeroGravityDirectionSensor;
-static float initialBeta = 0.2f;
-
-// Small helper constant for radians→degrees conversion used below.
 constexpr float RAD_TO_DEG_F = 57.2957795f;
 
-static bool probeI2CAddress(uint8_t address) {
-  Wire.beginTransmission(address);
-  return Wire.endTransmission(true) == 0;
+Adafruit_ADS1115 ads;
+
+struct HandleInput {
+  explicit HandleInput(uint8_t addressIn) : address(addressIn), bus(Wire), imu(Wire) {}
+  const uint8_t address;
+  TwoWire& bus;
+  ImuManager imu;
+  Orientation orientation;
+  calData calib = {};
+  AccelData accel = {};
+  GyroData gyro = {};
+  MagData mag = {};
+  bool configured = false;
+  bool online = false;
+  bool settling = false;
+  bool refLocked = false;
+  bool hasMag = false;
+  uint32_t retryAtMs = 0;
+  uint32_t settleStartedMs = 0;
+  uint32_t settleDurationMs = 0;
+  float restoreBeta = 0.2f;
+  float angleDeg = 0.0f;
+};
+
+HandleInput handles[] = {HandleInput(HANDLE1_ADDRESS), HandleInput(HANDLE2_ADDRESS)};
+bool adsOnline = false;
+uint32_t adsRetryAtMs = 0;
+float pedals[2] = {};
+
+static bool probe(TwoWire& bus, uint8_t address) {
+  bus.beginTransmission(address);
+  return bus.endTransmission(true) == 0;
 }
 
-static void scanI2CBus() {
-  uint8_t deviceCount = 0;
-
-  Serial.println("[I2C] Scanning all addresses...");
-
-  for (uint8_t address = 1; address < 127; ++address) {
-    Wire.beginTransmission(address);
-    const uint8_t error = Wire.endTransmission(true);
-
-    if (error == 0) {
-      Serial.print("[I2C] Device found at address 0x");
-      if (address < 0x10) {
-        Serial.print('0');
-      }
-      Serial.println(address, HEX);
-      ++deviceCount;
-    } else if (error == 4) {
-      Serial.print("[I2C] Unknown error at address 0x");
-      if (address < 0x10) {
-        Serial.print('0');
-      }
-      Serial.println(address, HEX);
-    }
-  }
-
-  if (deviceCount == 0) {
-    Serial.println("[I2C] No devices found.");
-  } else {
-    Serial.printf("[I2C] Scan complete. %u device(s) found.\n", deviceCount);
-  }
-}
-
-static bool isI2CBusHealthy() {
+static bool consumeTimeout(TwoWire& bus) {
 #ifdef WIRE_HAS_TIMEOUT
-  if (Wire.getWireTimeoutFlag()) {
-    return false;
-  }
-#endif
-  return probeI2CAddress(ImuManager::getImuAddress()) && probeI2CAddress(ADS_ADDRESS);
-}
-
-static bool consumeWireTimeout() {
-#ifdef WIRE_HAS_TIMEOUT
-  if (Wire.getWireTimeoutFlag()) {
-    Wire.clearWireTimeoutFlag();
+  if (bus.getWireTimeoutFlag()) {
+    bus.clearWireTimeoutFlag();
     return true;
   }
+#else
+  (void)bus;
 #endif
   return false;
 }
 
-static bool updateOrientationFromImu() {
-  ImuManager::update();
-  ImuManager::getAccel(&imuAccel);
-  ImuManager::getGyro(&imuGyro);
-
-  if (hasMag) {
-    ImuManager::getMag(&imuMag);
-    Orientation::updateWithMag(
-      imuGyro.gyroX, imuGyro.gyroY, imuGyro.gyroZ,
-      imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ,
-      imuMag.magX, imuMag.magY, imuMag.magZ
-    );
-  } else {
-    Orientation::updateIMU(
-      imuGyro.gyroX, imuGyro.gyroY, imuGyro.gyroZ,
-      imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ
-    );
-  }
-
-  return !consumeWireTimeout();
+static bool due(uint32_t now, uint32_t deadline) {
+  return static_cast<int32_t>(now - deadline) >= 0;
 }
 
-static bool settleOrientationFilter(uint32_t settleMs, bool resetFilter) {
-  if (resetFilter) {
-    Orientation::resetFilterForResync();
-  }
+static void startSettling(HandleInput& h, uint32_t duration) {
+  h.restoreBeta = h.orientation.getBeta();
+  if (h.hasMag) h.orientation.changeBeta(1.0f);
+  h.settleStartedMs = millis();
+  h.settleDurationMs = duration;
+  h.settling = true;
+}
 
-  const float restoreBeta = Orientation::getBeta();
-  if (hasMag) {
-    Orientation::changeBeta(1.0f);
-  }
-
-  if (!isI2CBusHealthy()) {
-    Orientation::changeBeta(restoreBeta);
+static bool initializeHandle(HandleInput& h, size_t index) {
+  consumeTimeout(h.bus);
+  // Never fall back to the other handle's address, including on reconnect.
+  if (!h.imu.selectAtAddress(h.address)) return false;
+  // This shared-bus configuration is for MPU6050 (WHO_AM_I is 0x68 at both addresses).
+  if (h.imu.getWhoAmI() != 0x68) {
+    Serial.printf("[HANDLE%u] Expected MPU6050 at 0x%02X.\n", unsigned(index + 1), h.address);
     return false;
   }
+  if (h.imu.initImu(h.calib) != 0) return false;
+  h.hasMag = h.imu.hasMagnetometer();
+  Serial.printf("[HANDLE%u] IMU 0x%02X, WHO_AM_I 0x%02X\n",
+                unsigned(index + 1), h.imu.getImuAddress(), h.imu.getWhoAmI());
 
-  const uint32_t startMs = millis();
-  do {
-    if (!updateOrientationFromImu()) {
-      Orientation::changeBeta(restoreBeta);
-      return false;
+  if (!h.configured) {
+    if (h.hasMag) {
+      Serial.printf("[HANDLE%u] Mag calibration: move this IMU in a figure-8.\n", unsigned(index + 1));
+      delay(3000);
+      h.imu.calibrateMag(&h.calib);
     }
-    delay(FILTER_SETTLE_SAMPLE_DELAY_MS);
-  } while ((uint32_t)(millis() - startMs) < settleMs);
-
-  Orientation::changeBeta(restoreBeta);
-  return isI2CBusHealthy();
+    Serial.printf("[HANDLE%u] Gyro calibration: keep this IMU still.\n", unsigned(index + 1));
+    delay(3000);
+    h.imu.calibrateGyroOnly(&h.calib);
+    if (consumeTimeout(h.bus) || !probe(h.bus, h.imu.getImuAddress()) ||
+        h.imu.initImu(h.calib) != 0) return false;
+    h.orientation.begin(h.hasMag, Vec3(0, 0, 1), Vec3(-1, 0, 0), h.hasMag ? 0.4f : 0.2f);
+    h.configured = true;
+    startSettling(h, FILTER_SETTLE_MS);
+  } else {
+    h.orientation.resetFilterForResync();
+    startSettling(h, RECONNECT_SETTLE_MS);
+  }
+  h.online = true;
+  return true;
 }
 
-static void markI2CLost() {
-  if (!i2cLinkActive) {
+static void updateHandle(HandleInput& h, size_t index) {
+  if (!h.online) {
+    if (due(millis(), h.retryAtMs) && !initializeHandle(h, index))
+      h.retryAtMs = millis() + RECONNECT_RETRY_MS;
     return;
   }
 
-  i2cLinkActive = false;
-  nextReconnectAttemptMs = millis() + RECONNECT_RETRY_MS;
-  Serial.println("[HANDLE] I2C lost. Stopping output and retrying scan...");
-}
-
-static bool initializeHandle(bool performCalibration, bool resetOrientation = false) {
-  const bool wasZeroLocked = refLocked;
-
-  if (!ImuManager::probeAndSelect(IMU_ADDRESS_PRIMARY, IMU_ADDRESS_SECONDARY)) {
-    return false;
+  if (!probe(h.bus, h.imu.getImuAddress()) || consumeTimeout(h.bus)) {
+    if (h.settling) h.orientation.changeBeta(h.restoreBeta);
+    h.online = false;
+    h.settling = false;
+    h.retryAtMs = millis() + RECONNECT_RETRY_MS;
+    Serial.printf("[HANDLE%u] I2C lost; retrying.\n", unsigned(index + 1));
+    return;
   }
 
-  Serial.print("[HANDLE] IMU I2C address: 0x");
-  Serial.println(ImuManager::getImuAddress(), HEX);
-
-  Serial.print("[HANDLE] WHO_AM_I: 0x");
-  Serial.println(ImuManager::getWhoAmI(), HEX);
-
-  int err = ImuManager::initImu(calib);
-  if (err != 0) {
-    Serial.print("[HANDLE] IMU init error: ");
-    Serial.println(err);
-    return false;
+  h.imu.update();
+  h.imu.getAccel(&h.accel);
+  h.imu.getGyro(&h.gyro);
+  if (h.hasMag) h.imu.getMag(&h.mag);
+  if (consumeTimeout(h.bus)) {
+    if (h.settling) h.orientation.changeBeta(h.restoreBeta);
+    h.online = false;
+    h.settling = false;
+    h.retryAtMs = millis() + RECONNECT_RETRY_MS;
+    return;
   }
-
-  hasMag = ImuManager::hasMagnetometer();
-
-  if (performCalibration) {
-    Serial.println("[HANDLE] Start calibration...");
-    if (hasMag) {
-      Serial.println("[HANDLE] Mag calibration: move the IMU in a figure-8 pattern.");
-      delay(3000);
-      ImuManager::calibrateMag(&calib);
-      Serial.println("[HANDLE] Mag calibration done.");
-    } else {
-      Serial.println("[HANDLE] No magnetometer detected.");
-    }
-
-    Serial.println("[HANDLE] Gyro calibration: keep the pedal and IMU completely still.");
-    delay(3000);
-    ImuManager::calibrateGyroOnly(&calib);
-    Serial.println("[HANDLE] Gyro calibration done.");
-
-    err = ImuManager::initImu(calib);
-    if (err != 0) {
-      Serial.print("[HANDLE] IMU re-init error: ");
-      Serial.println(err);
-      return false;
-    }
-  }
-
-  if (performCalibration) {
-    initialBeta = hasMag ? 0.4f : 0.2f;
-    Orientation::begin(hasMag, shaftAxisSensor, zeroGravityDirectionSensor, initialBeta);
-    if (!settleOrientationFilter(FILTER_SETTLE_MS, false)) {
-      return false;
-    }
-    Orientation::restartAngleTracking();
-    refLocked = true;
-  } else if (resetOrientation) {
-    initialBeta = hasMag ? 0.4f : 0.2f;
-    Orientation::begin(hasMag, shaftAxisSensor, zeroGravityDirectionSensor, initialBeta);
-    refLocked = wasZeroLocked;
+  if (h.hasMag) {
+    h.orientation.updateWithMag(h.gyro.gyroX, h.gyro.gyroY, h.gyro.gyroZ,
+      h.accel.accelX, h.accel.accelY, h.accel.accelZ, h.mag.magX, h.mag.magY, h.mag.magZ);
   } else {
-    refLocked = wasZeroLocked;
+    h.orientation.updateIMU(h.gyro.gyroX, h.gyro.gyroY, h.gyro.gyroZ,
+      h.accel.accelX, h.accel.accelY, h.accel.accelZ);
   }
-  i2cLinkActive = true;
-  nextReconnectAttemptMs = 0;
-
-  Serial.println("[HANDLE] Calibration and filter setup complete.");
-  Serial.println("[HANDLE] Angle zero: sensor Y horizontal, sensor -X aligned with sensed gravity.");
-  Serial.println("[HANDLE] Send 'z' to restart cumulative-angle tracking. Send 'b'/'B' to tune beta.");
-  return true;
-}
-
-static bool tryReconnect() {
-  if (millis() < nextReconnectAttemptMs) {
-    return false;
-  }
-
-#ifdef WIRE_HAS_TIMEOUT
-  Wire.clearWireTimeoutFlag();
-#endif
-
-  if (!probeI2CAddress(ADS_ADDRESS)) {
-    nextReconnectAttemptMs = millis() + RECONNECT_RETRY_MS;
-    return false;
-  }
-
-  if (!initializeHandle(false, false)) {
-    nextReconnectAttemptMs = millis() + RECONNECT_RETRY_MS;
-    return false;
-  }
-
-  if (!settleOrientationFilter(RECONNECT_FILTER_SETTLE_MS, true)) {
-    i2cLinkActive = false;
-    nextReconnectAttemptMs = millis() + RECONNECT_RETRY_MS;
-    return false;
-  }
-
-  if (refLocked && !Orientation::hasAbsoluteShaftReference()) {
-    refLocked = false;
-    Serial.println("[HANDLE] I2C link restored, but shaft Z is too close to gravity.");
-    Serial.println("[HANDLE] Move shaft Z away from gravity and send 'z' to restart angle tracking.");
-    return true;
-  }
-
-  Serial.println("[HANDLE] I2C link restored and orientation re-synced. Resuming output.");
-  return true;
-}
-
-// -------------------- Setup --------------------
-
-void setup() {
-  // I2CとSerialの初期化
-  Wire.begin();
-  Wire.setClock(100000);
-#ifdef WIRE_HAS_TIMEOUT
-  Wire.setWireTimeout(3000);
-#endif
-
-  Serial.begin(115200);
-  while (!Serial) { ; }
-
-  if (!ads.begin()) {
-    Serial.println("[PEDAL] Failed to initialize ADS1115. Check wiring.");
-    while (true) { delay(1000); }
-  }
-
-  ads.setGain(GAIN_ONE); // 1x gain = +/-4.096V range (default)
-  Serial.println("[PEDAL] ADS1115 initialized.");
-
-  // ここからハンドル部の初期化
-  // ハンドルの回転軸はIMUのZ軸。Y軸が水平かつ-X軸が重力基準方向を
-  // 向く姿勢を、起動時の姿勢に関係なく角度0とする。
-  shaftAxisSensor = normalize(Vec3(0.0f, 0.0f, 1.0f));
-  zeroGravityDirectionSensor = normalize(Vec3(-1.0f, 0.0f, 0.0f));
-
-  // IMUの検出と初期化。probeAndSelect()はI2Cアドレスを確認し、利用可能なIMUを選択
-  if (!initializeHandle(true)) {
-    Serial.println("[HANDLE] Initial I2C setup failed. Check wiring/power.");
-    scanI2CBus();
-    while (true) { delay(1000); }
-  }
-}
-
-// -------------------- Loop --------------------
-
-void loop() {
-  // ゼロロックとbeta調整のためのシリアルコマンド処理(ToDo: 後にUnityに移行予定)
-  while (Serial.available() > 0) {
-    char c = (char)Serial.read();
-    if (c == 'z' || c == 'Z') {
-      Orientation::restartAngleTracking();
-      refLocked = true;
-      Serial.println("[HANDLE] Cumulative-angle tracking restarted from the fixed gravity reference.");
-    } else if (c == 'b') {
-      float b = Orientation::getBeta() + 0.05f;
-      if (b > 1.0f) b = 1.0f;
-      Orientation::changeBeta(b);
-      Serial.printf("[HANDLE] Beta increased: %.3f\n", b);
-    } else if (c == 'B') {
-      float b = Orientation::getBeta() - 0.05f;
-      if (b < 0.01f) b = 0.01f;
-      Orientation::changeBeta(b);
-      Serial.printf("[HANDLE] Beta decreased: %.3f\n", b);
+  if (h.settling) {
+    if (uint32_t(millis() - h.settleStartedMs) < h.settleDurationMs) return;
+    h.orientation.changeBeta(h.restoreBeta);
+    if (!h.refLocked) {
+      h.orientation.restartAngleTracking();
+      h.refLocked = true;
     }
+    h.settling = false;
+    Serial.printf("[HANDLE%u] Ready.\n", unsigned(index + 1));
   }
+  h.angleDeg = -h.orientation.shaftAngleRad() * RAD_TO_DEG_F;
+}
 
-  if (!i2cLinkActive) {
-    if (tryReconnect()) {
-      delay(10);
+static void updatePedals() {
+  if (!adsOnline) {
+    if (!due(millis(), adsRetryAtMs)) return;
+    consumeTimeout(Wire);
+    adsOnline = ads.begin(ADS_ADDRESS, &Wire);
+    if (!adsOnline) {
+      adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
       return;
     }
-
-    delay(50);
+    ads.setGain(GAIN_ONE);
+    Serial.println("[PEDAL] ADS1115 ready: A0=pedal1, A1=pedal2.");
+  }
+  if (!probe(Wire, ADS_ADDRESS)) {
+    adsOnline = false;
+    adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
     return;
   }
-
-  if (!isI2CBusHealthy()) {
-    markI2CLost();
-    delay(10);
-    return;
+  for (uint8_t channel = 0; channel < 2; ++channel) {
+    const int16_t raw = ads.readADC_SingleEnded(channel);
+    if (consumeTimeout(Wire) || !probe(Wire, ADS_ADDRESS)) {
+      adsOnline = false;
+      adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
+      return;
+    }
+    pedals[channel] = constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f);
   }
+}
 
-  // ADS1115からペダルのアナログ値を読み取り、電圧とペダルの踏み込み率を計算
-  raw = ads.readADC_SingleEnded(0);
-  voltage = ads.computeVolts(raw);
-  pedalPercent = voltage / 3.3f; // Assuming GAIN_ONE
-
-  if (consumeWireTimeout()) {
-    markI2CLost();
-    delay(10);
-    return;
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(100000);
+  Wire.setTimeOut(20);
+  Serial.println("[INPUT] CSV: pedal1,handle1_deg,pedal2,handle2_deg");
+  // Complete blocking startup calibrations before either live filter starts.
+  for (size_t i = 0; i < 2; ++i) {
+    if (!initializeHandle(handles[i], i)) {
+      handles[i].retryAtMs = millis() + RECONNECT_RETRY_MS;
+      Serial.printf("[HANDLE%u] Not found; retrying.\n", unsigned(i + 1));
+    }
   }
-
-
-  // IMUの更新とOrientationフィルタの更新。磁気センサーがある場合は磁気データも使用
-  if (!updateOrientationFromImu()) {
-    markI2CLost();
-    delay(10);
-    return;
+  for (auto& h : handles) {
+    if (h.online) h.settleStartedMs = millis();
   }
-  if (!refLocked) {
-    delay(10);
-    return;
+}
+
+void loop() {
+  while (Serial.available()) {
+    const char c = char(Serial.read());
+    for (auto& h : handles) {
+      if (!h.configured) continue;
+      if (c == 'z' || c == 'Z') {
+        h.orientation.restartAngleTracking();
+        h.refLocked = true;
+      } else if (c == 'b' || c == 'B') {
+        const float beta = constrain((h.settling ? h.restoreBeta : h.orientation.getBeta())
+                                    + (c == 'b' ? 0.05f : -0.05f), 0.01f, 1.0f);
+        if (h.settling) h.restoreBeta = beta;
+        else h.orientation.changeBeta(beta);
+      }
+    }
   }
-
-  // ペダル踏み込み率とハンドル角度をシリアル出力。ハンドル角度はラジアンから度に変換
-  const float angleDeg = Orientation::shaftAngleRad() * RAD_TO_DEG_F;
-  Serial.printf("%.2f,%.2f", pedalPercent, -angleDeg);
-  // デバッグ用: IMUの生データも出力
-  Serial.printf(" || [Log] Accel X: %.2f, Y: %.2f, Z: %.2f | GYRO X: %.2f, Y: %.2f, Z: %.2f", imuAccel.accelX, imuAccel.accelY, imuAccel.accelZ, imuGyro.gyroX, imuGyro.gyroY, imuGyro.gyroZ);
-  Serial.println("");
-
+  updatePedals();
+  for (size_t i = 0; i < 2; ++i) updateHandle(handles[i], i);
+  // Missing inputs are explicit; never emit an old value as a live reading.
+  const float missing = NAN;
+  Serial.printf("%.2f,%.2f,%.2f,%.2f\n",
+    adsOnline ? pedals[0] : missing,
+    handles[0].online && !handles[0].settling ? handles[0].angleDeg : missing,
+    adsOnline ? pedals[1] : missing,
+    handles[1].online && !handles[1].settling ? handles[1].angleDeg : missing);
   delay(10);
 }

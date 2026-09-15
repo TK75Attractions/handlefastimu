@@ -10,56 +10,37 @@
 // Include FastIMU device implementations
 #include "FastIMU.h"
 
-namespace ImuManager {
-
-// Concrete device instances for all supported drivers. Keeping them as
-// file-scoped globals mirrors how the original sketch declared them,
-// but the rest of the project uses only the functions below.
-static MPU6050 imuMpu6050;
-static MPU6500 imuMpu6500;
-static MPU9250 imuMpu9250;
-static MPU9255 imuMpu9255;
-static MPU6515 imuMpu6515;
-static MPU6886 imuMpu6886;
-static ICM20689 imuIcm20689;
-static ICM20690 imuIcm20690;
-
-static IMUBase* imu = nullptr;
-static uint8_t imuAddress = 0;
-static uint8_t whoAmIVal = 0xFF;
-static bool hasMag = false;
+ImuManager::ImuManager(TwoWire& wireIn)
+  : wire(wireIn), imuMpu6050(wireIn), imuMpu6500(wireIn),
+    imuMpu9250(wireIn), imuMpu9255(wireIn), imuMpu6515(wireIn),
+    imuMpu6886(wireIn), imuIcm20689(wireIn), imuIcm20690(wireIn) {}
 
 // Probe a single I2C address. Returns true if a device ACKs.
-static bool probeI2CAddress(uint8_t address) {
-  Wire.beginTransmission(address);
-  return Wire.endTransmission(true) == 0;
+bool ImuManager::probeI2CAddress(uint8_t address) {
+  wire.beginTransmission(address);
+  return wire.endTransmission(true) == 0;
 }
 
 // Read WHO_AM_I register from a device at the given address.
-static uint8_t readWhoAmILocal(uint8_t address) {
-  Wire.beginTransmission(address);
-  Wire.write((uint8_t)0x75);
-  if (Wire.endTransmission(true) != 0) {
+uint8_t ImuManager::readWhoAmILocal(uint8_t address) {
+  wire.beginTransmission(address);
+  wire.write((uint8_t)0x75);
+  if (wire.endTransmission(true) != 0) {
     return 0xFF;
   }
-  if (Wire.requestFrom((int)address, 1) != 1) {
+  if (wire.requestFrom((int)address, 1) != 1) {
     return 0xFF;
   }
-  return Wire.read();
+  return wire.read();
 }
 
-bool probeAndSelect(uint8_t primary, uint8_t secondary) {
-  // Choose an I2C address that replies.
-  if (probeI2CAddress(primary)) {
-    imuAddress = primary;
-  } else if (probeI2CAddress(secondary)) {
-    imuAddress = secondary;
-  } else {
-    imu = nullptr;
-    imuAddress = 0;
-    whoAmIVal = 0xFF;
-    return false;
-  }
+bool ImuManager::selectAtAddress(uint8_t address) {
+  imu = nullptr;
+  imuAddress = 0;
+  whoAmIVal = 0xFF;
+  hasMag = false;
+  if (!probeI2CAddress(address)) return false;
+  imuAddress = address;
 
   whoAmIVal = readWhoAmILocal(imuAddress);
 
@@ -84,25 +65,25 @@ bool probeAndSelect(uint8_t primary, uint8_t secondary) {
   return true;
 }
 
-uint8_t getWhoAmI() { return whoAmIVal; }
-uint8_t getImuAddress() { return imuAddress; }
+uint8_t ImuManager::getWhoAmI() { return whoAmIVal; }
+uint8_t ImuManager::getImuAddress() { return imuAddress; }
 
-int initImu(calData& calib) {
+int ImuManager::initImu(calData& calib) {
   if (!imu) return -1;
   return imu->init(calib, imuAddress);
 }
 
-void calibrateMag(calData* calib) {
+void ImuManager::calibrateMag(calData* calib) {
   if (!imu || !hasMag || !calib) return;
   imu->calibrateMag(calib);
 }
 
-void calibrateAccelGyro(calData* calib) {
+void ImuManager::calibrateAccelGyro(calData* calib) {
   if (!imu || !calib) return;
   imu->calibrateAccelGyro(calib);
 }
 
-void calibrateGyroOnly(calData* calib, uint16_t sampleCount, uint16_t sampleDelayMs) {
+void ImuManager::calibrateGyroOnly(calData* calib, uint16_t sampleCount, uint16_t sampleDelayMs) {
   if (!imu || !calib || sampleCount == 0) return;
 
   GyroData gyro = {0};
@@ -128,26 +109,24 @@ void calibrateGyroOnly(calData* calib, uint16_t sampleCount, uint16_t sampleDela
   calib->valid = true;
 }
 
-void update() {
+void ImuManager::update() {
   if (!imu) return;
   imu->update();
 }
 
-void getAccel(AccelData* out) {
+void ImuManager::getAccel(AccelData* out) {
   if (!imu || !out) return;
   imu->getAccel(out);
 }
 
-void getGyro(GyroData* out) {
+void ImuManager::getGyro(GyroData* out) {
   if (!imu || !out) return;
   imu->getGyro(out);
 }
 
-void getMag(MagData* out) {
+void ImuManager::getMag(MagData* out) {
   if (!imu || !out) return;
   imu->getMag(out);
 }
 
-bool hasMagnetometer() { return hasMag; }
-
-} // namespace ImuManager
+bool ImuManager::hasMagnetometer() { return hasMag; }

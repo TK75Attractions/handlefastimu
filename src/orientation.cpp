@@ -5,22 +5,6 @@
 #include <Arduino.h>
 #include <math.h>
 
-namespace Orientation {
-
-static Madgwick filter;
-static float currentBeta = 0.2f;
-static bool useMag = false;
-
-static Vec3 shaftAxisSensor = {0.0f, 0.0f, 1.0f};
-static Vec3 zeroGravityProjection = {1.0f, 0.0f, 0.0f};
-static Vec3 latestGravityProjection = {0.0f, 0.0f, 0.0f};
-
-static bool refLocked = false;
-static bool latestGravityProjectionUsable = false;
-static uint32_t lastUpdateUs = 0;
-static float integratedAngleRad = 0.0f;
-static float prevWrapped = 0.0f;
-static float totalAngleRad = 0.0f;
 
 constexpr float DEG_TO_RAD_F = 0.0174532925f;
 constexpr float MIN_GRAVITY_PROJECTION_SQ = 0.0025f;
@@ -41,7 +25,7 @@ static inline Vec3 cross(const Vec3& a, const Vec3& b) {
   };
 }
 
-static Vec3 projectOffSensorAxis(const Vec3& v) {
+Vec3 Orientation::projectOffSensorAxis(const Vec3& v) {
   return subtract(v, scale(shaftAxisSensor, dot(v, shaftAxisSensor)));
 }
 
@@ -49,7 +33,7 @@ static bool isUsableProjection(const Vec3& v) {
   return dot(v, v) > MIN_GRAVITY_PROJECTION_SQ;
 }
 
-static void updateGravityProjectionFromFilter() {
+void Orientation::updateGravityProjectionFromFilter() {
   const float qw = filter.getQuatW();
   const float qx = filter.getQuatX();
   const float qy = filter.getQuatY();
@@ -81,7 +65,7 @@ static float unwrapAngle(float wrapped, float& prevWrappedLocal, float& totalLoc
   return totalLocal;
 }
 
-static void updateIntegratedAngle(float gx, float gy, float gz) {
+void Orientation::updateIntegratedAngle(float gx, float gy, float gz) {
   const uint32_t nowUs = micros();
   if (lastUpdateUs == 0) {
     lastUpdateUs = nowUs;
@@ -99,7 +83,7 @@ static void updateIntegratedAngle(float gx, float gy, float gz) {
   integratedAngleRad += dot(gyro, shaftAxisSensor) * DEG_TO_RAD_F * dt;
 }
 
-void begin(
+void Orientation::begin(
   bool hasMagnetometer,
   const Vec3& shaftAxisSensorIn,
   const Vec3& zeroGravityDirectionSensorIn,
@@ -121,14 +105,14 @@ void begin(
   totalAngleRad = 0.0f;
 }
 
-void changeBeta(float newBeta) {
+void Orientation::changeBeta(float newBeta) {
   currentBeta = newBeta;
   filter.changeBeta(currentBeta);
 }
 
-float getBeta() { return currentBeta; }
+float Orientation::getBeta() { return currentBeta; }
 
-void resetFilterForResync() {
+void Orientation::resetFilterForResync() {
   filter.reset();
   filter.begin(useMag ? 0.12f : 0.05f);
   filter.changeBeta(currentBeta);
@@ -136,19 +120,19 @@ void resetFilterForResync() {
   lastUpdateUs = micros();
 }
 
-void updateWithMag(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz) {
+void Orientation::updateWithMag(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz) {
   filter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
   updateGravityProjectionFromFilter();
   updateIntegratedAngle(gx, gy, gz);
 }
 
-void updateIMU(float gx, float gy, float gz, float ax, float ay, float az) {
+void Orientation::updateIMU(float gx, float gy, float gz, float ax, float ay, float az) {
   filter.updateIMU(gx, gy, gz, ax, ay, az);
   updateGravityProjectionFromFilter();
   updateIntegratedAngle(gx, gy, gz);
 }
 
-void restartAngleTracking() {
+void Orientation::restartAngleTracking() {
   refLocked = true;
   lastUpdateUs = micros();
   integratedAngleRad = 0.0f;
@@ -156,11 +140,11 @@ void restartAngleTracking() {
   totalAngleRad = 0.0f;
 }
 
-bool hasAbsoluteShaftReference() {
+bool Orientation::hasAbsoluteShaftReference() {
   return refLocked && latestGravityProjectionUsable;
 }
 
-float shaftAngleRad() {
+float Orientation::shaftAngleRad() {
   if (!refLocked) {
     return 0.0f;
   }
@@ -179,5 +163,3 @@ float shaftAngleRad() {
   // until an absolute gravity angle becomes usable again.
   return integratedAngleRad;
 }
-
-} // namespace Orientation
