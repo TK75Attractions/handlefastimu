@@ -53,6 +53,19 @@ float pedals[2] = {};
 bool pedalConnected[2] = {};
 uint32_t nextPedalProbeMs = 0;
 uint8_t nextPedalProbeChannel = 0;
+int16_t pedalProbeHighRaw = 0;
+
+enum class PedalAdcState : uint8_t {
+  Normal0Waiting,
+  Normal1Waiting,
+  ProbeHighSettling,
+  ProbeHighWaiting,
+  ProbeLowSettling,
+  ProbeLowWaiting
+};
+
+PedalAdcState pedalAdcState = PedalAdcState::Normal0Waiting;
+uint32_t pedalProbeDeadlineMs = 0;
 
 static bool probe(TwoWire& bus, uint8_t address) {
   bus.beginTransmission(address);
@@ -73,6 +86,40 @@ static bool consumeTimeout(TwoWire& bus) {
 
 static bool due(uint32_t now, uint32_t deadline) {
   return static_cast<int32_t>(now - deadline) >= 0;
+}
+
+static uint16_t pedalMux(uint8_t channel) {
+  return channel == 0 ? ADS1X15_REG_CONFIG_MUX_SINGLE_0
+                      : ADS1X15_REG_CONFIG_MUX_SINGLE_1;
+}
+
+static void markAdsOffline() {
+  pinMode(PEDAL_PROBE_PIN, INPUT);
+  adsOnline = false;
+  pedalConnected[0] = false;
+  pedalConnected[1] = false;
+  adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
+}
+
+static bool startPedalConversion(uint8_t channel) {
+  ads.startADCReading(pedalMux(channel), false);
+  if (!consumeTimeout(Wire)) return true;
+  markAdsOffline();
+  return false;
+}
+
+static bool readCompletedPedalConversion(int16_t& raw) {
+  const bool complete = ads.conversionComplete();
+  if (consumeTimeout(Wire)) {
+    markAdsOffline();
+    return false;
+  }
+  if (!complete) return false;
+
+  raw = ads.getLastConversionResults();
+  if (!consumeTimeout(Wire)) return true;
+  markAdsOffline();
+  return false;
 }
 
 static void startSettling(HandleInput& h, uint32_t duration) {
@@ -176,55 +223,70 @@ static void updatePedals() {
       return;
     }
     ads.setGain(GAIN_ONE);
+    ads.setDataRate(RATE_ADS1115_860SPS);
     pedalConnected[0] = false;
     pedalConnected[1] = false;
-    nextPedalProbeMs = millis();
+    nextPedalProbeMs = millis() + PEDAL_PROBE_INTERVAL_MS;
     nextPedalProbeChannel = 0;
+    pedalAdcState = PedalAdcState::Normal0Waiting;
+    if (!startPedalConversion(0)) return;
     Serial.println("[PEDAL] ADS1115 ready: A0=pedal1, A1=pedal2.");
   }
-  if (!probe(Wire, ADS_ADDRESS)) {
-    adsOnline = false;
-    adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
-    return;
-  }
-  for (uint8_t channel = 0; channel < 2; ++channel) {
-    const int16_t raw = ads.readADC_SingleEnded(channel);
-    if (consumeTimeout(Wire) || !probe(Wire, ADS_ADDRESS)) {
-      adsOnline = false;
-      adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
+
+  int16_t raw = 0;
+  switch (pedalAdcState) {
+    case PedalAdcState::Normal0Waiting:
+      if (!readCompletedPedalConversion(raw)) return;
+      pedals[0] = constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f);
+      if (!startPedalConversion(1)) return;
+      pedalAdcState = PedalAdcState::Normal1Waiting;
       return;
-    }
-    pedals[channel] = constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f);
+
+    case PedalAdcState::Normal1Waiting:
+      if (!readCompletedPedalConversion(raw)) return;
+      pedals[1] = constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f);
+      if (due(millis(), nextPedalProbeMs)) {
+        digitalWrite(PEDAL_PROBE_PIN, HIGH);
+        pinMode(PEDAL_PROBE_PIN, OUTPUT);
+        pedalProbeDeadlineMs = millis() + PEDAL_PROBE_SETTLE_MS;
+        pedalAdcState = PedalAdcState::ProbeHighSettling;
+      } else {
+        if (!startPedalConversion(0)) return;
+        pedalAdcState = PedalAdcState::Normal0Waiting;
+      }
+      return;
+
+    case PedalAdcState::ProbeHighSettling:
+      if (!due(millis(), pedalProbeDeadlineMs)) return;
+      if (!startPedalConversion(nextPedalProbeChannel)) return;
+      pedalAdcState = PedalAdcState::ProbeHighWaiting;
+      return;
+
+    case PedalAdcState::ProbeHighWaiting:
+      if (!readCompletedPedalConversion(pedalProbeHighRaw)) return;
+      digitalWrite(PEDAL_PROBE_PIN, LOW);
+      pedalProbeDeadlineMs = millis() + PEDAL_PROBE_SETTLE_MS;
+      pedalAdcState = PedalAdcState::ProbeLowSettling;
+      return;
+
+    case PedalAdcState::ProbeLowSettling:
+      if (!due(millis(), pedalProbeDeadlineMs)) return;
+      if (!startPedalConversion(nextPedalProbeChannel)) return;
+      pedalAdcState = PedalAdcState::ProbeLowWaiting;
+      return;
+
+    case PedalAdcState::ProbeLowWaiting:
+      if (!readCompletedPedalConversion(raw)) return;
+      pinMode(PEDAL_PROBE_PIN, INPUT);
+      pedalConnected[nextPedalProbeChannel] =
+        fabsf(ads.computeVolts(pedalProbeHighRaw) - ads.computeVolts(raw))
+          < PEDAL_OPEN_DELTA_VOLTS;
+      nextPedalProbeChannel ^= 1;
+      nextPedalProbeMs = millis() + PEDAL_PROBE_INTERVAL_MS;
+      if (!startPedalConversion(0)) return;
+      pedalAdcState = PedalAdcState::Normal0Waiting;
+      return;
   }
-
-  if (!due(millis(), nextPedalProbeMs)) return;
-
-  const uint8_t channel = nextPedalProbeChannel;
-  nextPedalProbeChannel ^= 1;
-  nextPedalProbeMs = millis() + PEDAL_PROBE_INTERVAL_MS;
-
-  digitalWrite(PEDAL_PROBE_PIN, HIGH);
-  pinMode(PEDAL_PROBE_PIN, OUTPUT);
-  delay(PEDAL_PROBE_SETTLE_MS);
-  const int16_t highRaw = ads.readADC_SingleEnded(channel);
-  const bool highOk = !consumeTimeout(Wire) && probe(Wire, ADS_ADDRESS);
-
-  digitalWrite(PEDAL_PROBE_PIN, LOW);
-  delay(PEDAL_PROBE_SETTLE_MS);
-  const int16_t lowRaw = ads.readADC_SingleEnded(channel);
-  const bool lowOk = !consumeTimeout(Wire) && probe(Wire, ADS_ADDRESS);
-  pinMode(PEDAL_PROBE_PIN, INPUT); // High impedance between probes.
-
-  if (!highOk || !lowOk) {
-    adsOnline = false;
-    pedalConnected[0] = false;
-    pedalConnected[1] = false;
-    adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
-    return;
-  }
-
-  const float deltaVolts = fabsf(ads.computeVolts(highRaw) - ads.computeVolts(lowRaw));
-  pedalConnected[channel] = deltaVolts < PEDAL_OPEN_DELTA_VOLTS;
 }
 
 void setup() {
