@@ -20,6 +20,7 @@ constexpr float PEDAL_OPEN_DELTA_VOLTS = 0.8f;
 constexpr uint32_t FILTER_SETTLE_MS = 5000;
 constexpr uint32_t RECONNECT_SETTLE_MS = 1200;
 constexpr uint32_t RECONNECT_RETRY_MS = 1000;
+constexpr uint32_t OUTPUT_PERIOD_US = 20000; // 50 Hz
 constexpr float RAD_TO_DEG_F = 57.2957795f;
 
 Adafruit_ADS1115 ads;
@@ -66,6 +67,7 @@ enum class PedalAdcState : uint8_t {
 
 PedalAdcState pedalAdcState = PedalAdcState::Normal0Waiting;
 uint32_t pedalProbeDeadlineMs = 0;
+uint32_t nextOutputUs = 0;
 
 static bool probe(TwoWire& bus, uint8_t address) {
   bus.beginTransmission(address);
@@ -289,6 +291,24 @@ static void updatePedals() {
   }
 }
 
+static void outputLatestInputs() {
+  const uint32_t nowUs = micros();
+  if (!due(nowUs, nextOutputUs)) return;
+
+  nextOutputUs += OUTPUT_PERIOD_US;
+  // Skip missed slots instead of emitting a burst after an exceptional delay.
+  if (due(nowUs, nextOutputUs)) {
+    nextOutputUs = nowUs + OUTPUT_PERIOD_US;
+  }
+
+  const float missing = NAN;
+  Serial.printf("%.2f,%.2f,%.2f,%.2f\n",
+    adsOnline && pedalConnected[0] ? pedals[0] : missing,
+    handles[0].online && !handles[0].settling ? handles[0].angleDeg : missing,
+    adsOnline && pedalConnected[1] ? pedals[1] : missing,
+    handles[1].online && !handles[1].settling ? handles[1].angleDeg : missing);
+}
+
 void setup() {
   Serial.begin(115200);
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -306,6 +326,7 @@ void setup() {
   for (auto& h : handles) {
     if (h.online) h.settleStartedMs = millis();
   }
+  nextOutputUs = micros() + OUTPUT_PERIOD_US;
 }
 
 void loop() {
@@ -326,12 +347,6 @@ void loop() {
   }
   updatePedals();
   for (size_t i = 0; i < 2; ++i) updateHandle(handles[i], i);
-  // Missing inputs are explicit; never emit an old value as a live reading.
-  const float missing = NAN;
-  Serial.printf("%.2f,%.2f,%.2f,%.2f\n",
-    adsOnline && pedalConnected[0] ? pedals[0] : missing,
-    handles[0].online && !handles[0].settling ? handles[0].angleDeg : missing,
-    adsOnline && pedalConnected[1] ? pedals[1] : missing,
-    handles[1].online && !handles[1].settling ? handles[1].angleDeg : missing);
-  delay(10);
+  outputLatestInputs();
+  delay(1); // Yield without making the output period depend on loop duration.
 }
