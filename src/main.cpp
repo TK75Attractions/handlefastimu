@@ -132,6 +132,36 @@ static void startSettling(HandleInput& h, uint32_t duration) {
   h.settling = true;
 }
 
+static bool calibrateHandle(HandleInput& h, size_t index) {
+  if (!h.online) {
+    Serial.printf("[HANDLE%u] Calibration skipped: IMU is offline.\n", unsigned(index + 1));
+    return false;
+  }
+
+  if (h.hasMag) {
+    Serial.printf("[HANDLE%u] Mag calibration: move this IMU in a figure-8.\n", unsigned(index + 1));
+    delay(3000);
+    h.imu.calibrateMag(&h.calib);
+  }
+  Serial.printf("[HANDLE%u] Gyro calibration: keep this IMU still.\n", unsigned(index + 1));
+  delay(3000);
+  h.imu.calibrateGyroOnly(&h.calib);
+  if (consumeTimeout(h.bus) || !probe(h.bus, h.imu.getImuAddress()) ||
+      h.imu.initImu(h.calib) != 0) {
+    h.online = false;
+    h.settling = false;
+    h.retryAtMs = millis() + RECONNECT_RETRY_MS;
+    Serial.printf("[HANDLE%u] Calibration failed; retrying connection.\n", unsigned(index + 1));
+    return false;
+  }
+
+  h.orientation.begin(h.hasMag, Vec3(0, 0, 1), Vec3(-1, 0, 0), h.hasMag ? 0.4f : 0.2f);
+  h.refLocked = false;
+  startSettling(h, FILTER_SETTLE_MS);
+  Serial.printf("[HANDLE%u] Calibration complete; filter settling.\n", unsigned(index + 1));
+  return true;
+}
+
 static bool initializeHandle(HandleInput& h, size_t index) {
   consumeTimeout(h.bus);
   // Never fall back to the other handle's address, including on reconnect.
@@ -147,16 +177,6 @@ static bool initializeHandle(HandleInput& h, size_t index) {
                 unsigned(index + 1), h.imu.getImuAddress(), h.imu.getWhoAmI());
 
   if (!h.configured) {
-    if (h.hasMag) {
-      Serial.printf("[HANDLE%u] Mag calibration: move this IMU in a figure-8.\n", unsigned(index + 1));
-      delay(3000);
-      h.imu.calibrateMag(&h.calib);
-    }
-    Serial.printf("[HANDLE%u] Gyro calibration: keep this IMU still.\n", unsigned(index + 1));
-    delay(3000);
-    h.imu.calibrateGyroOnly(&h.calib);
-    if (consumeTimeout(h.bus) || !probe(h.bus, h.imu.getImuAddress()) ||
-        h.imu.initImu(h.calib) != 0) return false;
     h.orientation.begin(h.hasMag, Vec3(0, 0, 1), Vec3(-1, 0, 0), h.hasMag ? 0.4f : 0.2f);
     h.configured = true;
     startSettling(h, FILTER_SETTLE_MS);
@@ -316,7 +336,7 @@ void setup() {
   Wire.setTimeOut(20);
   pinMode(PEDAL_PROBE_PIN, INPUT);
   Serial.println("[INPUT] CSV: pedal1,handle1_deg,pedal2,handle2_deg");
-  // Complete blocking startup calibrations before either live filter starts.
+  Serial.println("[INPUT] Send 'c' to calibrate both handles.");
   for (size_t i = 0; i < 2; ++i) {
     if (!initializeHandle(handles[i], i)) {
       handles[i].retryAtMs = millis() + RECONNECT_RETRY_MS;
@@ -332,6 +352,15 @@ void setup() {
 void loop() {
   while (Serial.available()) {
     const char c = char(Serial.read());
+    if (c == 'c' || c == 'C') {
+      Serial.println("[INPUT] Starting handle calibration.");
+      for (size_t i = 0; i < 2; ++i) calibrateHandle(handles[i], i);
+      // Start the settling interval together after all blocking calibrations.
+      for (auto& h : handles) {
+        if (h.online && h.settling) h.settleStartedMs = millis();
+      }
+      continue;
+    }
     for (auto& h : handles) {
       if (!h.configured) continue;
       if (c == 'z' || c == 'Z') {
