@@ -4,6 +4,7 @@
 #include <Adafruit_ADS1X15.h>
 #include "imu_manager.hpp"
 #include "orientation.hpp"
+#include "pedal_filter.hpp"
 
 // All inputs share one bus; AD0 selects each MPU6050 address.
 constexpr uint8_t I2C_SDA = 21;
@@ -51,6 +52,7 @@ HandleInput handles[] = {HandleInput(HANDLE1_ADDRESS), HandleInput(HANDLE2_ADDRE
 bool adsOnline = false;
 uint32_t adsRetryAtMs = 0;
 float pedals[2] = {};
+PedalFilter pedalFilters[2];
 bool pedalConnected[2] = {};
 uint32_t nextPedalProbeMs = 0;
 uint8_t nextPedalProbeChannel = 0;
@@ -100,6 +102,8 @@ static void markAdsOffline() {
   adsOnline = false;
   pedalConnected[0] = false;
   pedalConnected[1] = false;
+  pedalFilters[0].reset();
+  pedalFilters[1].reset();
   adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
 }
 
@@ -248,6 +252,8 @@ static void updatePedals() {
     ads.setDataRate(RATE_ADS1115_860SPS);
     pedalConnected[0] = false;
     pedalConnected[1] = false;
+    pedalFilters[0].reset();
+    pedalFilters[1].reset();
     nextPedalProbeMs = millis() + PEDAL_PROBE_INTERVAL_MS;
     nextPedalProbeChannel = 0;
     pedalAdcState = PedalAdcState::Normal0Waiting;
@@ -259,14 +265,16 @@ static void updatePedals() {
   switch (pedalAdcState) {
     case PedalAdcState::Normal0Waiting:
       if (!readCompletedPedalConversion(raw)) return;
-      pedals[0] = constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f);
+      pedals[0] = pedalFilters[0].update(
+        constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f), micros());
       if (!startPedalConversion(1)) return;
       pedalAdcState = PedalAdcState::Normal1Waiting;
       return;
 
     case PedalAdcState::Normal1Waiting:
       if (!readCompletedPedalConversion(raw)) return;
-      pedals[1] = constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f);
+      pedals[1] = pedalFilters[1].update(
+        constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f), micros());
       if (due(millis(), nextPedalProbeMs)) {
         digitalWrite(PEDAL_PROBE_PIN, HIGH);
         pinMode(PEDAL_PROBE_PIN, OUTPUT);
@@ -300,9 +308,16 @@ static void updatePedals() {
     case PedalAdcState::ProbeLowWaiting:
       if (!readCompletedPedalConversion(raw)) return;
       pinMode(PEDAL_PROBE_PIN, INPUT);
-      pedalConnected[nextPedalProbeChannel] =
+      {
+        const bool wasConnected = pedalConnected[nextPedalProbeChannel];
+        const bool isConnected =
         fabsf(ads.computeVolts(pedalProbeHighRaw) - ads.computeVolts(raw))
           < PEDAL_OPEN_DELTA_VOLTS;
+        pedalConnected[nextPedalProbeChannel] = isConnected;
+        if (wasConnected != isConnected) {
+          pedalFilters[nextPedalProbeChannel].reset();
+        }
+      }
       nextPedalProbeChannel ^= 1;
       nextPedalProbeMs = millis() + PEDAL_PROBE_INTERVAL_MS;
       if (!startPedalConversion(0)) return;
@@ -323,9 +338,9 @@ static void outputLatestInputs() {
 
   const float missing = NAN;
   Serial.printf("%.2f,%.2f,%.2f,%.2f\n",
-    adsOnline && pedalConnected[0] ? pedals[0] : missing,
+    adsOnline && pedalConnected[0] && pedalFilters[0].hasValue() ? pedals[0] : missing,
     handles[0].online && !handles[0].settling ? handles[0].angleDeg : missing,
-    adsOnline && pedalConnected[1] ? pedals[1] : missing,
+    adsOnline && pedalConnected[1] && pedalFilters[1].hasValue() ? pedals[1] : missing,
     handles[1].online && !handles[1].settling ? handles[1].angleDeg : missing);
 }
 
