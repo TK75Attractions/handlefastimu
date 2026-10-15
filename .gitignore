@@ -5,3 +5,5 @@
 .vscode/
 lib/
 .DS_Store
+~$*
+hardware/work/node_modules

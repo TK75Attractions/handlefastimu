@@ -1,0 +1,27 @@
+{
+  "net_groups": 9,
+  "wires": 37,
+  "bare": 6,
+  "insulated": 31,
+  "overlapping_segments": 0,
+  "bare_foreign_joint_contacts": 0,
+  "power_rail_pitch_mm": 5.08,
+  "old_16_20_used": false,
+  "modified_wire_numbers": [
+    1,
+    2,
+    3,
+    4,
+    6,
+    8,
+    10,
+    12,
+    17,
+    18,
+    21,
+    22,
+    28,
+    34,
+    35
+  ]
+}
