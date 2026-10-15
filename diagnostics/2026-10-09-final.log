@@ -1,0 +1,433 @@
+2019 12:21:46
+rst:0x1 (POWERON_RESET),boot�ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:4640
+load:0x40078000,len:15660
+load:0x40080400,len:3164
+entry 0x4008059c
+[INPUT] CSV: pedal1,handle1_deg,pedal2,handle2_deg
+[INPUT] Send 'c' to calibrate both handles.
+[INPUT] Send 'd' to toggle register/raw diagnostics (1 Hz).
+[HANDLE1] Not ready at 0x68: WHO_AM_I=0x75 (MPU6050 requires 0x68); retrying.
+[HANDLE2] No I2C ACK at 0x69; retrying.
+[PEDAL] ADS1115 ready: A0=pedal1, A1=pedal2.
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] enabled
+[DIAG] uptime_ms=1340 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=584,-1544,16436 temp=1408 gyro=706,333,30
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xC3E0 conversion_read=1 conversion_raw=2257 online=1 state=0
+[DIAG A0] samples=133 raw=2244 volts=0.2805 probe_delta_V=2.5299 connected=0
+[DIAG A1] samples=133 raw=2337 volts=0.2921 probe_delta_V=3.2759 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] uptime_ms=2393 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=596,-1492,16452 temp=1328 gyro=673,305,56
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xC3E0 conversion_read=1 conversion_raw=2426 online=1 state=0
+[DIAG A0] samples=240 raw=2414 volts=0.3018 probe_delta_V=2.5300 connected=0
+[DIAG A1] samples=240 raw=2514 volts=0.3143 probe_delta_V=3.2743 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] uptime_ms=3445 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=692,-1560,16416 temp=1408 gyro=659,373,26
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xC3E0 conversion_read=1 conversion_raw=2206 online=1 state=0
+[DIAG A0] samples=341 raw=2197 volts=0.2746 probe_delta_V=2.5298 connected=0
+[DIAG A1] samples=341 raw=2267 volts=0.2834 probe_delta_V=3.2731 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] uptime_ms=4497 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=580,-1556,16516 temp=1328 gyro=706,317,25
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xC3E0 conversion_read=1 conversion_raw=2401 online=1 state=0
+[DIAG A0] samples=448 raw=2390 volts=0.2988 probe_delta_V=2.5257 connected=0
+[DIAG A1] samples=448 raw=2487 volts=0.3109 probe_delta_V=3.2753 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] uptime_ms=5549 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=616,-1492,16360 temp=1408 gyro=714,342,70
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xC3E0 conversion_read=1 conversion_raw=2192 online=1 state=0
+[DIAG A0] samples=549 raw=2168 volts=0.2710 probe_delta_V=2.5299 connected=0
+[DIAG A1] samples=549 raw=2274 volts=0.2843 probe_delta_V=3.2735 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] disabled
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan

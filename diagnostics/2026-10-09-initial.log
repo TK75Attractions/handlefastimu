@@ -1,0 +1,516 @@
+2019 12:21:46
+rst:0x1 (POWERON_RESET),boot�ets Jul 29 2019 12:21:46
+rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:4640
+load:0x40078000,len:15660
+load:0x40080400,len:3164
+entry 0x4008059c
+[INPUT] CSV: pedal1,handle1_deg,pedal2,handle2_deg
+[INPUT] Send 'c' to calibrate both handles.
+[INPUT] Send 'd' to toggle register/raw diagnostics (1 Hz).
+[HANDLE1] Not found; retrying.
+[HANDLE2] Not found; retrying.
+[PEDAL] ADS1115 ready: A0=pedal1, A1=pedal2.
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] enabled
+[DIAG] uptime_ms=1340 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=524,-1660,16372 temp=1408 gyro=701,293,29
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[  1366][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  1377][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  1384][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  1395][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  1402][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  1413][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xD3E0 conversion_read=1 conversion_raw=2358 online=1 state=1
+[DIAG A0] samples=135 raw=2247 volts=0.2809 probe_delta_V=2.5259 connected=0
+[DIAG A1] samples=134 raw=2321 volts=0.2901 probe_delta_V=3.2744 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] uptime_ms=2446 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=568,-1552,16420 temp=1424 gyro=662,334,45
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[  2471][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  2482][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  2490][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  2500][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  2508][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  2518][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xD3E0 conversion_read=1 conversion_raw=2541 online=1 state=1
+[DIAG A0] samples=242 raw=2469 volts=0.3086 probe_delta_V=2.5254 connected=0
+[DIAG A1] samples=241 raw=2552 volts=0.3190 probe_delta_V=3.2738 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] uptime_ms=3551 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=492,-1544,16488 temp=1408 gyro=674,350,20
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[  3576][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  3587][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  3595][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  3605][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  3613][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  3623][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xD3E0 conversion_read=1 conversion_raw=2309 online=1 state=1
+[DIAG A0] samples=343 raw=2229 volts=0.2786 probe_delta_V=2.5290 connected=0
+[DIAG A1] samples=342 raw=2315 volts=0.2894 probe_delta_V=3.2754 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] uptime_ms=4655 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=528,-1600,16504 temp=1328 gyro=712,345,24
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[  4680][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  4691][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  4699][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  4709][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  4717][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  4727][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xD3E0 conversion_read=1 conversion_raw=2545 online=1 state=1
+[DIAG A0] samples=450 raw=2449 volts=0.3061 probe_delta_V=2.5273 connected=0
+[DIAG A1] samples=449 raw=2518 volts=0.3148 probe_delta_V=3.2748 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] uptime_ms=5759 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=640,-1528,16372 temp=1328 gyro=702,338,70
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[  5784][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  5795][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  5803][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  5813][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  5821][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  5831][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xD3E0 conversion_read=1 conversion_raw=2330 online=1 state=1
+[DIAG A0] samples=551 raw=2221 volts=0.2776 probe_delta_V=2.5285 connected=0
+[DIAG A1] samples=550 raw=2298 volts=0.2873 probe_delta_V=3.2741 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] uptime_ms=6864 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=568,-1520,16448 temp=1376 gyro=677,367,13
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[  6889][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  6900][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  6908][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  6918][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  6926][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  6936][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xD3E0 conversion_read=1 conversion_raw=2535 online=1 state=1
+[DIAG A0] samples=658 raw=2459 volts=0.3074 probe_delta_V=2.5280 connected=0
+[DIAG A1] samples=657 raw=2545 volts=0.3181 probe_delta_V=3.2745 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+[DIAG] uptime_ms=7969 SDA=21 SCL=22
+[DIAG HANDLE1] addr=0x68 who_read=1 WHO_AM_I=0x75 power_read=1 PWR_MGMT_1=0x01 raw_read=1 online=0 settling=0 angle=0.00
+[DIAG HANDLE1 RAW] accel=616,-1448,16448 temp=1328 gyro=686,363,24
+[DIAG HANDLE1 DRIVER] accel_g=0.0000,0.0000,0.0000 gyro_dps=0.000,0.000,0.000
+[  7994][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  8005][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  8013][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  8023][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[  8031][E][esp32-hal-i2c-ng.c:372] i2cWriteReadNonStop(): i2c_master_transmit_receive failed: [259] ESP_ERR_INVALID_STATE
+[  8041][E][Wire.cpp:520] requestFrom(): i2cWriteReadNonStop returned Error 259
+[DIAG HANDLE2] addr=0x69 who_read=0 WHO_AM_I=0x00 power_read=0 PWR_MGMT_1=0x00 raw_read=0 online=0 settling=0 angle=0.00
+[DIAG ADS] addr=0x48 config_read=1 config=0xD3E0 conversion_read=1 conversion_raw=2308 online=1 state=1
+[DIAG A0] samples=759 raw=2227 volts=0.2784 probe_delta_V=2.5287 connected=0
+[DIAG A1] samples=758 raw=2312 volts=0.2890 probe_delta_V=3.2758 connected=0
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
+nan,nan,nan,nan
