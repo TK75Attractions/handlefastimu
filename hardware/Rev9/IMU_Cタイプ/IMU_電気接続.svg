@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="940" viewBox="0 0 1600 940">
+<rect width="100%" height="100%" fill="white"/>
+<style>text{font-family:Arial,"Hiragino Sans","Noto Sans CJK JP",sans-serif;fill:#20364c;font-size:17px}.h{font-size:30px;font-weight:bold}.sub{font-size:14px;fill:#536b7d}.pin{font-size:14px;font-weight:bold}</style>
+<text x="40" y="52" class="h">IMU1・IMU2：メイン基板との電気接続</text>
+<text x="40" y="84" class="sub">各IMUは4芯。3VoとINTは未接続。C4/C5は各小基板上でVIN―GND間に置く。</text>
+<rect x="80" y="180" width="270" height="210" rx="9" fill="#e4edf5" stroke="#46647e" stroke-width="2"/>
+<text x="110" y="222" class="pin">メイン基板 MPU1</text>
+<text x="110" y="252" class="sub">電源2P：3V3 / GND</text>
+<text x="110" y="282" class="sub">信号2P：SDA / SCL</text>
+<rect x="1030" y="160" width="430" height="250" rx="9" fill="#dcefe6" stroke="#3d765b" stroke-width="2"/>
+<text x="1070" y="200" class="pin">Cタイプ小基板 IMU1</text>
+<text x="1070" y="230" class="sub">0x68 / ADDR開放</text>
+<line x1="350" y1="270" x2="1030" y2="270" stroke="#d43c51" stroke-width="5"/>
+<text x="365" y="261" class="pin">3V3</text>
+<text x="950" y="261" class="pin">VIN</text>
+<line x1="350" y1="305" x2="1030" y2="305" stroke="#263746" stroke-width="5"/>
+<text x="365" y="296" class="pin">GND</text>
+<text x="950" y="296" class="pin">GND</text>
+<line x1="350" y1="340" x2="1030" y2="340" stroke="#188849" stroke-width="5"/>
+<text x="365" y="331" class="pin">SDA</text>
+<text x="950" y="331" class="pin">SDA</text>
+<line x1="350" y1="375" x2="1030" y2="375" stroke="#2673c7" stroke-width="5"/>
+<text x="365" y="366" class="pin">SCL</text>
+<text x="950" y="366" class="pin">SCL</text>
+<line x1="1320" y1="270" x2="1320" y2="280" stroke="#d43c51" stroke-width="3"/>
+<line x1="1320" y1="295" x2="1320" y2="305" stroke="#263746" stroke-width="3"/>
+<line x1="1302" y1="280" x2="1338" y2="280" stroke="#8f6b19" stroke-width="3"/>
+<line x1="1302" y1="295" x2="1338" y2="295" stroke="#8f6b19" stroke-width="3"/>
+<text x="1345" y="292.5" class="sub">C4 100nF</text>
+<rect x="80" y="530" width="270" height="210" rx="9" fill="#e4edf5" stroke="#46647e" stroke-width="2"/>
+<text x="110" y="572" class="pin">メイン基板 MPU2</text>
+<text x="110" y="602" class="sub">電源2P：3V3 / GND</text>
+<text x="110" y="632" class="sub">信号2P：SDA / SCL</text>
+<rect x="1030" y="510" width="430" height="250" rx="9" fill="#dcefe6" stroke="#3d765b" stroke-width="2"/>
+<text x="1070" y="550" class="pin">Cタイプ小基板 IMU2</text>
+<text x="1070" y="580" class="sub">0x69 / ADDR短絡</text>
+<line x1="350" y1="620" x2="1030" y2="620" stroke="#d43c51" stroke-width="5"/>
+<text x="365" y="611" class="pin">3V3</text>
+<text x="950" y="611" class="pin">VIN</text>
+<line x1="350" y1="655" x2="1030" y2="655" stroke="#263746" stroke-width="5"/>
+<text x="365" y="646" class="pin">GND</text>
+<text x="950" y="646" class="pin">GND</text>
+<line x1="350" y1="690" x2="1030" y2="690" stroke="#188849" stroke-width="5"/>
+<text x="365" y="681" class="pin">SDA</text>
+<text x="950" y="681" class="pin">SDA</text>
+<line x1="350" y1="725" x2="1030" y2="725" stroke="#2673c7" stroke-width="5"/>
+<text x="365" y="716" class="pin">SCL</text>
+<text x="950" y="716" class="pin">SCL</text>
+<line x1="1320" y1="620" x2="1320" y2="630" stroke="#d43c51" stroke-width="3"/>
+<line x1="1320" y1="645" x2="1320" y2="655" stroke="#263746" stroke-width="3"/>
+<line x1="1302" y1="630" x2="1338" y2="630" stroke="#8f6b19" stroke-width="3"/>
+<line x1="1302" y1="645" x2="1338" y2="645" stroke="#8f6b19" stroke-width="3"/>
+<text x="1345" y="642.5" class="sub">C5 100nF</text>
+<text x="80" y="865" class="sub">ケーブル色：赤=3V3、黒=GND、緑=SDA、青=SCL。AWG24より線を使用し、両端をねじ端子台で固定する。</text>
+</svg>
