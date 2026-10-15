@@ -70,6 +70,59 @@ enum class PedalAdcState : uint8_t {
 PedalAdcState pedalAdcState = PedalAdcState::Normal0Waiting;
 uint32_t pedalProbeDeadlineMs = 0;
 uint32_t nextOutputUs = 0;
+bool diagnosticsEnabled = false;
+uint32_t nextDiagnosticsMs = 0;
+int16_t pedalRaw[2] = {};
+uint32_t pedalSamples[2] = {};
+float pedalProbeDelta[2] = {NAN, NAN};
+
+// Unlike an address scan, this verifies that the requested register bytes arrived.
+static bool readRegisters(uint8_t address, uint8_t reg, uint8_t* data, uint8_t count) {
+  // Avoid issuing repeated-start reads to an absent device (ESP32 logs errors).
+  Wire.beginTransmission(address);
+  if (Wire.endTransmission(true) != 0) return false;
+  Wire.beginTransmission(address);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(address, count) != count) return false;
+  for (uint8_t i = 0; i < count; ++i) data[i] = Wire.read();
+  return true;
+}
+
+static void printDiagnostics() {
+  Serial.printf("[DIAG] uptime_ms=%lu SDA=%u SCL=%u\n",
+                (unsigned long)millis(), I2C_SDA, I2C_SCL);
+  for (size_t i = 0; i < 2; ++i) {
+    auto& h = handles[i];
+    uint8_t who = 0, power = 0, data[14] = {};
+    const bool whoOk = readRegisters(h.address, 0x75, &who, 1);
+    const bool powerOk = readRegisters(h.address, 0x6B, &power, 1);
+    const bool rawOk = readRegisters(h.address, 0x3B, data, sizeof(data));
+    Serial.printf("[DIAG HANDLE%u] addr=0x%02X who_read=%u WHO_AM_I=0x%02X power_read=%u PWR_MGMT_1=0x%02X raw_read=%u online=%u settling=%u angle=%.2f\n",
+      unsigned(i + 1), h.address, whoOk, who, powerOk, power, rawOk,
+      h.online, h.settling, h.angleDeg);
+    if (rawOk) {
+      int16_t values[7];
+      for (uint8_t j = 0; j < 7; ++j)
+        values[j] = int16_t((uint16_t(data[2*j]) << 8) | data[2*j+1]);
+      Serial.printf("[DIAG HANDLE%u RAW] accel=%d,%d,%d temp=%d gyro=%d,%d,%d\n",
+        unsigned(i + 1), values[0], values[1], values[2], values[3], values[4], values[5], values[6]);
+      Serial.printf("[DIAG HANDLE%u DRIVER] accel_g=%.4f,%.4f,%.4f gyro_dps=%.3f,%.3f,%.3f\n",
+        unsigned(i + 1), h.accel.accelX, h.accel.accelY, h.accel.accelZ,
+        h.gyro.gyroX, h.gyro.gyroY, h.gyro.gyroZ);
+    }
+  }
+  uint8_t config[2] = {}, conversion[2] = {};
+  const bool configOk = readRegisters(ADS_ADDRESS, 0x01, config, 2);
+  const bool conversionOk = readRegisters(ADS_ADDRESS, 0x00, conversion, 2);
+  Serial.printf("[DIAG ADS] addr=0x%02X config_read=%u config=0x%04X conversion_read=%u conversion_raw=%d online=%u state=%u\n",
+    ADS_ADDRESS, configOk, unsigned((uint16_t(config[0]) << 8) | config[1]), conversionOk,
+    int16_t((uint16_t(conversion[0]) << 8) | conversion[1]), adsOnline, unsigned(pedalAdcState));
+  for (uint8_t i = 0; i < 2; ++i)
+    Serial.printf("[DIAG A%u] samples=%lu raw=%d volts=%.4f probe_delta_V=%.4f connected=%u\n",
+      i, (unsigned long)pedalSamples[i], pedalRaw[i], ads.computeVolts(pedalRaw[i]),
+      pedalProbeDelta[i], pedalConnected[i]);
+}
 
 static bool probe(TwoWire& bus, uint8_t address) {
   bus.beginTransmission(address);
@@ -265,6 +318,8 @@ static void updatePedals() {
   switch (pedalAdcState) {
     case PedalAdcState::Normal0Waiting:
       if (!readCompletedPedalConversion(raw)) return;
+      pedalRaw[0] = raw;
+      ++pedalSamples[0];
       pedals[0] = pedalFilters[0].update(
         constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f), micros());
       if (!startPedalConversion(1)) return;
@@ -273,6 +328,8 @@ static void updatePedals() {
 
     case PedalAdcState::Normal1Waiting:
       if (!readCompletedPedalConversion(raw)) return;
+      pedalRaw[1] = raw;
+      ++pedalSamples[1];
       pedals[1] = pedalFilters[1].update(
         constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f), micros());
       if (due(millis(), nextPedalProbeMs)) {
@@ -310,9 +367,10 @@ static void updatePedals() {
       pinMode(PEDAL_PROBE_PIN, INPUT);
       {
         const bool wasConnected = pedalConnected[nextPedalProbeChannel];
+        pedalProbeDelta[nextPedalProbeChannel] =
+          fabsf(ads.computeVolts(pedalProbeHighRaw) - ads.computeVolts(raw));
         const bool isConnected =
-        fabsf(ads.computeVolts(pedalProbeHighRaw) - ads.computeVolts(raw))
-          < PEDAL_OPEN_DELTA_VOLTS;
+          pedalProbeDelta[nextPedalProbeChannel] < PEDAL_OPEN_DELTA_VOLTS;
         pedalConnected[nextPedalProbeChannel] = isConnected;
         if (wasConnected != isConnected) {
           pedalFilters[nextPedalProbeChannel].reset();
@@ -352,10 +410,17 @@ void setup() {
   pinMode(PEDAL_PROBE_PIN, INPUT);
   Serial.println("[INPUT] CSV: pedal1,handle1_deg,pedal2,handle2_deg");
   Serial.println("[INPUT] Send 'c' to calibrate both handles.");
+  Serial.println("[INPUT] Send 'd' to toggle register/raw diagnostics (1 Hz).");
   for (size_t i = 0; i < 2; ++i) {
     if (!initializeHandle(handles[i], i)) {
       handles[i].retryAtMs = millis() + RECONNECT_RETRY_MS;
-      Serial.printf("[HANDLE%u] Not found; retrying.\n", unsigned(i + 1));
+      if (handles[i].imu.getImuAddress() != 0) {
+        Serial.printf("[HANDLE%u] Not ready at 0x%02X: WHO_AM_I=0x%02X (MPU6050 requires 0x68); retrying.\n",
+          unsigned(i + 1), handles[i].address, handles[i].imu.getWhoAmI());
+      } else {
+        Serial.printf("[HANDLE%u] No I2C ACK at 0x%02X; retrying.\n",
+          unsigned(i + 1), handles[i].address);
+      }
     }
   }
   for (auto& h : handles) {
@@ -367,6 +432,12 @@ void setup() {
 void loop() {
   while (Serial.available()) {
     const char c = char(Serial.read());
+    if (c == 'd' || c == 'D') {
+      diagnosticsEnabled = !diagnosticsEnabled;
+      nextDiagnosticsMs = millis();
+      Serial.printf("[DIAG] %s\n", diagnosticsEnabled ? "enabled" : "disabled");
+      continue;
+    }
     if (c == 'c' || c == 'C') {
       Serial.println("[INPUT] Starting handle calibration.");
       for (size_t i = 0; i < 2; ++i) calibrateHandle(handles[i], i);
@@ -392,5 +463,9 @@ void loop() {
   updatePedals();
   for (size_t i = 0; i < 2; ++i) updateHandle(handles[i], i);
   outputLatestInputs();
+  if (diagnosticsEnabled && due(millis(), nextDiagnosticsMs)) {
+    printDiagnostics();
+    nextDiagnosticsMs = millis() + 1000;
+  }
   delay(1); // Yield without making the output period depend on loop duration.
 }
