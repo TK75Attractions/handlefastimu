@@ -1,11 +1,20 @@
+Run from the repository root:
 
-This directory is intended for PlatformIO Test Runner and project tests.
+    python3 test/run_tests.py
 
-Unit Testing is a software testing method by which individual units of
-source code, sets of one or more MCU program modules together with associated
-control data, usage procedures, and operating procedures, are tested to
-determine whether they are fit for use. Unit testing finds problems early
-in the development cycle.
+Requires Python 3 and a C++11 compiler with AddressSanitizer and UBSan support.
+CXX can override the compiler. No Arduino hardware or third-party Python packages are needed.
 
-More information about PlatformIO Unit Testing:
-- https://docs.platformio.org/en/latest/advanced/unit-testing/index.html
+protocol_test.cpp compiles the same rgp_protocol.cpp used by ESP32 firmware.
+It reads all three unmodified supplied vector files and reports the distinction
+between ESP behavior, CRC checks, unsupported optional capability contexts, and
+PC-side examples (valid framing round trip only, not host semantic validation).
+
+firmware_test.cpp compiles the real main.cpp setup/loop with deterministic doubles
+for Arduino, I2C, ADS1115, ImuManager, and Orientation. It tests application scheduling,
+input gating, calibration, recovery, scanning, and actual RGP output. The doubles
+are not tests of physical hardware, FastIMU drivers, or orientation filter accuracy.
+Both executables run with AddressSanitizer/UndefinedBehaviorSanitizer.
+
+Vectors were copied unchanged from the user-supplied RGP/test-vectors directory
+(RGP/1 1.0 release candidate, two-player TEL revision) on 2026-10-15.

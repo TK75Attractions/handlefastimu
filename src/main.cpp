@@ -4,6 +4,7 @@
 #include <Adafruit_ADS1X15.h>
 #include "imu_manager.hpp"
 #include "orientation.hpp"
+#include "rgp_protocol.hpp"
 
 // All inputs share one bus; AD0 selects each MPU6050 address.
 constexpr uint8_t I2C_SDA = 21;
@@ -11,16 +12,15 @@ constexpr uint8_t I2C_SCL = 22;
 constexpr uint8_t HANDLE1_ADDRESS = 0x68;
 constexpr uint8_t HANDLE2_ADDRESS = 0x69;
 constexpr uint8_t ADS_ADDRESS = 0x48;
-// GPIO27 reaches A0 and A1 through separate 100 kOhm resistors.
+// GPIO27 reaches A0 through A3 through four separate 100 kOhm resistors.
 // A low-impedance pedal holds its voltage; an open input follows the probe.
 constexpr uint8_t PEDAL_PROBE_PIN = 27;
-constexpr uint32_t PEDAL_PROBE_INTERVAL_MS = 250;
+constexpr uint32_t PEDAL_PROBE_INTERVAL_MS = 100;
 constexpr uint16_t PEDAL_PROBE_SETTLE_MS = 20;
 constexpr float PEDAL_OPEN_DELTA_VOLTS = 0.8f;
 constexpr uint32_t FILTER_SETTLE_MS = 5000;
 constexpr uint32_t RECONNECT_SETTLE_MS = 1200;
 constexpr uint32_t RECONNECT_RETRY_MS = 1000;
-constexpr uint32_t OUTPUT_PERIOD_US = 20000; // 50 Hz
 constexpr float RAD_TO_DEG_F = 57.2957795f;
 
 Adafruit_ADS1115 ads;
@@ -50,30 +50,86 @@ struct HandleInput {
 HandleInput handles[] = {HandleInput(HANDLE1_ADDRESS), HandleInput(HANDLE2_ADDRESS)};
 bool adsOnline = false;
 uint32_t adsRetryAtMs = 0;
-float pedals[2] = {};
-bool pedalConnected[2] = {};
+// Preserve the existing accelerator wiring; add independent brake inputs.
+constexpr size_t PEDAL_COUNT = 4;
+constexpr const char* PEDAL_NAMES[] = {"P1_ACCEL", "P2_ACCEL", "P1_BRAKE", "P2_BRAKE"};
+struct PedalCalibration { float minimum; float maximum; };
+// Each channel has its own calibration. Replace these nominal endpoints with measured values.
+constexpr PedalCalibration PEDAL_CALIBRATION[] = {{0, 3.3f}, {0, 3.3f}, {0, 3.3f}, {0, 3.3f}};
+float pedals[PEDAL_COUNT] = {};
+bool pedalConnected[PEDAL_COUNT] = {};
+bool pedalSampled[PEDAL_COUNT] = {};
+bool pedalChecked[PEDAL_COUNT] = {};
+bool pedalReportedLost[PEDAL_COUNT] = {};
+uint8_t normalPedalChannel = 0;
+uint32_t pedalConversionStartedMs = 0;
 uint32_t nextPedalProbeMs = 0;
 uint8_t nextPedalProbeChannel = 0;
 int16_t pedalProbeHighRaw = 0;
 
 enum class PedalAdcState : uint8_t {
-  Normal0Waiting,
-  Normal1Waiting,
+  NormalWaiting,
   ProbeHighSettling,
   ProbeHighWaiting,
   ProbeLowSettling,
   ProbeLowWaiting
 };
 
-PedalAdcState pedalAdcState = PedalAdcState::Normal0Waiting;
+PedalAdcState pedalAdcState = PedalAdcState::NormalWaiting;
 uint32_t pedalProbeDeadlineMs = 0;
 uint32_t nextOutputUs = 0;
 
+class FirmwareDevice : public rgp::Device {
+public:
+  void write(const std::string& wire) override { Serial.write(reinterpret_cast<const uint8_t*>(wire.data()), wire.size()); }
+  rgp::Status status() const override;
+  bool zeroAngles() override;
+  void setBeta(float value) override;
+  void calibrate(uint32_t origin, const std::string& target) override;
+  void scan(uint32_t origin) override;
+};
+FirmwareDevice device;
+rgp::Protocol protocol(device);
+
+struct CalibrationJob {
+  bool active = false;
+  uint32_t origin = 0;
+  std::string target;
+  size_t handle = 0;
+  uint16_t samples = 0;
+  double sum[3] = {};
+  uint32_t nextSampleMs = 0;
+  bool prepared = false;
+} calibration;
+struct ScanJob {
+  bool active = false;
+  uint32_t origin = 0;
+  uint8_t address = 0x08;
+  uint8_t count = 0;
+  bool adsFound = false;
+  bool handleFound[2] = {};
+} scanJob;
+bool angleWasLocked = false;
+bool connectionWasLost = false;
+bool busFailureReported = false;
+static void restartPedalSampling();
+static void serviceSerial() {
+  // Limit an RX pass while guaranteeing service between potentially slow IMU initializations.
+  for (size_t count = 0; count < 256 && Serial.available(); ++count)
+    protocol.receive(uint8_t(Serial.read()), millis());
+  protocol.tick(millis());
+}
+
+static std::string integer(uint32_t n) { return std::to_string(n); }
+static std::string addressText(uint8_t address) {
+  char text[5];
+  snprintf(text, sizeof(text), "0x%02X", address);
+  return text;
+}
 static bool probe(TwoWire& bus, uint8_t address) {
   bus.beginTransmission(address);
   return bus.endTransmission(true) == 0;
 }
-
 static bool consumeTimeout(TwoWire& bus) {
 #ifdef WIRE_HAS_TIMEOUT
   if (bus.getWireTimeoutFlag()) {
@@ -85,99 +141,75 @@ static bool consumeTimeout(TwoWire& bus) {
 #endif
   return false;
 }
-
 static bool due(uint32_t now, uint32_t deadline) {
   return static_cast<int32_t>(now - deadline) >= 0;
 }
-
 static uint16_t pedalMux(uint8_t channel) {
-  return channel == 0 ? ADS1X15_REG_CONFIG_MUX_SINGLE_0
-                      : ADS1X15_REG_CONFIG_MUX_SINGLE_1;
+  static const uint16_t mux[] = {ADS1X15_REG_CONFIG_MUX_SINGLE_0,
+    ADS1X15_REG_CONFIG_MUX_SINGLE_1, ADS1X15_REG_CONFIG_MUX_SINGLE_2,
+    ADS1X15_REG_CONFIG_MUX_SINGLE_3};
+  return mux[channel];
 }
-
+static bool validPedalCalibration() {
+  for (const auto& c : PEDAL_CALIBRATION) {
+    float ignored;
+    if (!rgp::normalizePedal(0, c.minimum, c.maximum, ignored)) return false;
+  }
+  return true;
+}
 static void markAdsOffline() {
   pinMode(PEDAL_PROBE_PIN, INPUT);
   adsOnline = false;
-  pedalConnected[0] = false;
-  pedalConnected[1] = false;
+  for (size_t i = 0; i < PEDAL_COUNT; ++i) {
+    pedalConnected[i] = false;
+    pedalSampled[i] = false;
+    pedalChecked[i] = false;
+  }
   adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
 }
-
+static void markHandleOffline(HandleInput& h) {
+  if (h.settling) h.orientation.changeBeta(h.restoreBeta);
+  h.online = false;
+  h.settling = false;
+  h.retryAtMs = millis() + RECONNECT_RETRY_MS;
+}
 static bool startPedalConversion(uint8_t channel) {
+  if (!probe(Wire, ADS_ADDRESS)) { markAdsOffline(); return false; }
   ads.startADCReading(pedalMux(channel), false);
+  pedalConversionStartedMs = millis();
   if (!consumeTimeout(Wire)) return true;
   markAdsOffline();
   return false;
 }
-
 static bool readCompletedPedalConversion(int16_t& raw) {
+  if (!probe(Wire, ADS_ADDRESS)) { markAdsOffline(); return false; }
   const bool complete = ads.conversionComplete();
-  if (consumeTimeout(Wire)) {
+  if (consumeTimeout(Wire) || uint32_t(millis() - pedalConversionStartedMs) >= 100) {
     markAdsOffline();
     return false;
   }
   if (!complete) return false;
-
   raw = ads.getLastConversionResults();
   if (!consumeTimeout(Wire)) return true;
   markAdsOffline();
   return false;
 }
-
 static void startSettling(HandleInput& h, uint32_t duration) {
-  h.restoreBeta = h.orientation.getBeta();
-  if (h.hasMag) h.orientation.changeBeta(1.0f);
+  h.restoreBeta = protocol.beta();
+  h.orientation.changeBeta(h.hasMag ? 1.0f : h.restoreBeta);
   h.settleStartedMs = millis();
   h.settleDurationMs = duration;
   h.settling = true;
 }
-
-static bool calibrateHandle(HandleInput& h, size_t index) {
-  if (!h.online) {
-    Serial.printf("[HANDLE%u] Calibration skipped: IMU is offline.\n", unsigned(index + 1));
-    return false;
-  }
-
-  if (h.hasMag) {
-    Serial.printf("[HANDLE%u] Mag calibration: move this IMU in a figure-8.\n", unsigned(index + 1));
-    delay(3000);
-    h.imu.calibrateMag(&h.calib);
-  }
-  Serial.printf("[HANDLE%u] Gyro calibration: keep this IMU still.\n", unsigned(index + 1));
-  delay(3000);
-  h.imu.calibrateGyroOnly(&h.calib);
-  if (consumeTimeout(h.bus) || !probe(h.bus, h.imu.getImuAddress()) ||
-      h.imu.initImu(h.calib) != 0) {
-    h.online = false;
-    h.settling = false;
-    h.retryAtMs = millis() + RECONNECT_RETRY_MS;
-    Serial.printf("[HANDLE%u] Calibration failed; retrying connection.\n", unsigned(index + 1));
-    return false;
-  }
-
-  h.orientation.begin(h.hasMag, Vec3(0, 0, 1), Vec3(-1, 0, 0), h.hasMag ? 0.4f : 0.2f);
-  h.refLocked = false;
-  startSettling(h, FILTER_SETTLE_MS);
-  Serial.printf("[HANDLE%u] Calibration complete; filter settling.\n", unsigned(index + 1));
-  return true;
-}
-
 static bool initializeHandle(HandleInput& h, size_t index) {
   consumeTimeout(h.bus);
-  // Never fall back to the other handle's address, including on reconnect.
-  if (!h.imu.selectAtAddress(h.address)) return false;
-  // This shared-bus configuration is for MPU6050 (WHO_AM_I is 0x68 at both addresses).
-  if (h.imu.getWhoAmI() != 0x68) {
-    Serial.printf("[HANDLE%u] Expected MPU6050 at 0x%02X.\n", unsigned(index + 1), h.address);
-    return false;
-  }
-  if (h.imu.initImu(h.calib) != 0) return false;
+  if (!h.imu.selectAtAddress(h.address) || h.imu.getWhoAmI() != 0x68 ||
+      h.imu.initImu(h.calib) != 0) return false;
   h.hasMag = h.imu.hasMagnetometer();
-  Serial.printf("[HANDLE%u] IMU 0x%02X, WHO_AM_I 0x%02X\n",
-                unsigned(index + 1), h.imu.getImuAddress(), h.imu.getWhoAmI());
-
+  protocol.send("SYS", "DEVICE,IMU," + addressText(h.address) + "," + addressText(h.imu.getWhoAmI()), millis());
+  protocol.event("IMU_FOUND", millis());
   if (!h.configured) {
-    h.orientation.begin(h.hasMag, Vec3(0, 0, 1), Vec3(-1, 0, 0), h.hasMag ? 0.4f : 0.2f);
+    h.orientation.begin(h.hasMag, Vec3(0, 0, 1), Vec3(-1, 0, 0), protocol.beta());
     h.configured = true;
     startSettling(h, FILTER_SETTLE_MS);
   } else {
@@ -185,197 +217,341 @@ static bool initializeHandle(HandleInput& h, size_t index) {
     startSettling(h, RECONNECT_SETTLE_MS);
   }
   h.online = true;
+  (void)index;
   return true;
 }
-
 static void updateHandle(HandleInput& h, size_t index) {
   if (!h.online) {
     if (due(millis(), h.retryAtMs) && !initializeHandle(h, index))
       h.retryAtMs = millis() + RECONNECT_RETRY_MS;
     return;
   }
-
-  if (!probe(h.bus, h.imu.getImuAddress()) || consumeTimeout(h.bus)) {
-    if (h.settling) h.orientation.changeBeta(h.restoreBeta);
-    h.online = false;
-    h.settling = false;
-    h.retryAtMs = millis() + RECONNECT_RETRY_MS;
-    Serial.printf("[HANDLE%u] I2C lost; retrying.\n", unsigned(index + 1));
-    return;
-  }
-
+  if (!probe(h.bus, h.address) || consumeTimeout(h.bus)) { markHandleOffline(h); return; }
+  if (calibration.active && calibration.handle == index) return;
   h.imu.update();
   h.imu.getAccel(&h.accel);
   h.imu.getGyro(&h.gyro);
-  if (h.hasMag) h.imu.getMag(&h.mag);
-  if (consumeTimeout(h.bus)) {
-    if (h.settling) h.orientation.changeBeta(h.restoreBeta);
-    h.online = false;
-    h.settling = false;
-    h.retryAtMs = millis() + RECONNECT_RETRY_MS;
-    return;
-  }
-  if (h.hasMag) {
-    h.orientation.updateWithMag(h.gyro.gyroX, h.gyro.gyroY, h.gyro.gyroZ,
-      h.accel.accelX, h.accel.accelY, h.accel.accelZ, h.mag.magX, h.mag.magY, h.mag.magZ);
-  } else {
-    h.orientation.updateIMU(h.gyro.gyroX, h.gyro.gyroY, h.gyro.gyroZ,
-      h.accel.accelX, h.accel.accelY, h.accel.accelZ);
-  }
+  if (consumeTimeout(h.bus) || !isfinite(h.accel.accelX) || !isfinite(h.accel.accelY) ||
+      !isfinite(h.accel.accelZ) || !isfinite(h.gyro.gyroX) || !isfinite(h.gyro.gyroY) ||
+      !isfinite(h.gyro.gyroZ)) { markHandleOffline(h); return; }
+  h.orientation.updateIMU(h.gyro.gyroX, h.gyro.gyroY, h.gyro.gyroZ,
+    h.accel.accelX, h.accel.accelY, h.accel.accelZ);
   if (h.settling) {
     if (uint32_t(millis() - h.settleStartedMs) < h.settleDurationMs) return;
     h.orientation.changeBeta(h.restoreBeta);
+    if (!h.orientation.canLockShaftReference()) return;
     if (!h.refLocked) {
       h.orientation.restartAngleTracking();
       h.refLocked = true;
     }
     h.settling = false;
-    Serial.printf("[HANDLE%u] Ready.\n", unsigned(index + 1));
   }
   h.angleDeg = -h.orientation.shaftAngleRad() * RAD_TO_DEG_F;
 }
-
 static void updatePedals() {
   if (!adsOnline) {
     if (!due(millis(), adsRetryAtMs)) return;
     consumeTimeout(Wire);
     adsOnline = ads.begin(ADS_ADDRESS, &Wire);
-    if (!adsOnline) {
-      adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
-      return;
-    }
+    if (!adsOnline) { adsRetryAtMs = millis() + RECONNECT_RETRY_MS; return; }
     ads.setGain(GAIN_ONE);
     ads.setDataRate(RATE_ADS1115_860SPS);
-    pedalConnected[0] = false;
-    pedalConnected[1] = false;
+    for (size_t i = 0; i < PEDAL_COUNT; ++i) {
+      pedalConnected[i] = false;
+      pedalSampled[i] = false;
+      pedalChecked[i] = false;
+    }
+    normalPedalChannel = 0;
     nextPedalProbeMs = millis() + PEDAL_PROBE_INTERVAL_MS;
     nextPedalProbeChannel = 0;
-    pedalAdcState = PedalAdcState::Normal0Waiting;
+    pedalAdcState = PedalAdcState::NormalWaiting;
     if (!startPedalConversion(0)) return;
-    Serial.println("[PEDAL] ADS1115 ready: A0=pedal1, A1=pedal2.");
+    protocol.send("SYS", "DEVICE,ADS1115," + addressText(ADS_ADDRESS), millis());
+    protocol.event("ADS_READY", millis());
   }
-
   int16_t raw = 0;
   switch (pedalAdcState) {
-    case PedalAdcState::Normal0Waiting:
+    case PedalAdcState::NormalWaiting: {
       if (!readCompletedPedalConversion(raw)) return;
-      pedals[0] = constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f);
-      if (!startPedalConversion(1)) return;
-      pedalAdcState = PedalAdcState::Normal1Waiting;
-      return;
-
-    case PedalAdcState::Normal1Waiting:
-      if (!readCompletedPedalConversion(raw)) return;
-      pedals[1] = constrain(ads.computeVolts(raw) / 3.3f, 0.0f, 1.0f);
-      if (due(millis(), nextPedalProbeMs)) {
+      const auto& c = PEDAL_CALIBRATION[normalPedalChannel];
+      pedalSampled[normalPedalChannel] = rgp::normalizePedal(ads.computeVolts(raw),
+        c.minimum, c.maximum, pedals[normalPedalChannel]);
+      if (!pedalSampled[normalPedalChannel] && !pedalReportedLost[normalPedalChannel]) {
+        protocol.error(std::string("ERROR,ADS1115,READ_FAILED,") + PEDAL_NAMES[normalPedalChannel], millis());
+        pedalReportedLost[normalPedalChannel] = true;
+      }
+      normalPedalChannel = (normalPedalChannel + 1) % PEDAL_COUNT;
+      if (normalPedalChannel == 0 && due(millis(), nextPedalProbeMs)) {
         digitalWrite(PEDAL_PROBE_PIN, HIGH);
         pinMode(PEDAL_PROBE_PIN, OUTPUT);
         pedalProbeDeadlineMs = millis() + PEDAL_PROBE_SETTLE_MS;
         pedalAdcState = PedalAdcState::ProbeHighSettling;
-      } else {
-        if (!startPedalConversion(0)) return;
-        pedalAdcState = PedalAdcState::Normal0Waiting;
-      }
+      } else startPedalConversion(normalPedalChannel);
       return;
-
+    }
     case PedalAdcState::ProbeHighSettling:
       if (!due(millis(), pedalProbeDeadlineMs)) return;
-      if (!startPedalConversion(nextPedalProbeChannel)) return;
-      pedalAdcState = PedalAdcState::ProbeHighWaiting;
+      if (startPedalConversion(nextPedalProbeChannel)) pedalAdcState = PedalAdcState::ProbeHighWaiting;
       return;
-
     case PedalAdcState::ProbeHighWaiting:
       if (!readCompletedPedalConversion(pedalProbeHighRaw)) return;
       digitalWrite(PEDAL_PROBE_PIN, LOW);
       pedalProbeDeadlineMs = millis() + PEDAL_PROBE_SETTLE_MS;
       pedalAdcState = PedalAdcState::ProbeLowSettling;
       return;
-
     case PedalAdcState::ProbeLowSettling:
       if (!due(millis(), pedalProbeDeadlineMs)) return;
-      if (!startPedalConversion(nextPedalProbeChannel)) return;
-      pedalAdcState = PedalAdcState::ProbeLowWaiting;
+      if (startPedalConversion(nextPedalProbeChannel)) pedalAdcState = PedalAdcState::ProbeLowWaiting;
       return;
-
-    case PedalAdcState::ProbeLowWaiting:
+    case PedalAdcState::ProbeLowWaiting: {
       if (!readCompletedPedalConversion(raw)) return;
       pinMode(PEDAL_PROBE_PIN, INPUT);
-      pedalConnected[nextPedalProbeChannel] =
-        fabsf(ads.computeVolts(pedalProbeHighRaw) - ads.computeVolts(raw))
-          < PEDAL_OPEN_DELTA_VOLTS;
-      nextPedalProbeChannel ^= 1;
+      const size_t i = nextPedalProbeChannel;
+      const bool connected = fabsf(ads.computeVolts(pedalProbeHighRaw) - ads.computeVolts(raw)) < PEDAL_OPEN_DELTA_VOLTS;
+      if (!connected || !pedalConnected[i]) pedalSampled[i] = false;
+      pedalConnected[i] = connected;
+      pedalChecked[i] = true;
+      if (!connected && !pedalReportedLost[i]) {
+        protocol.error(std::string("ERROR,ADS1115,READ_FAILED,") + PEDAL_NAMES[i], millis());
+        pedalReportedLost[i] = true;
+      }
+      if (connected) pedalReportedLost[i] = false;
+      nextPedalProbeChannel = (nextPedalProbeChannel + 1) % PEDAL_COUNT;
       nextPedalProbeMs = millis() + PEDAL_PROBE_INTERVAL_MS;
-      if (!startPedalConversion(0)) return;
-      pedalAdcState = PedalAdcState::Normal0Waiting;
+      normalPedalChannel = 0;
+      if (startPedalConversion(0)) pedalAdcState = PedalAdcState::NormalWaiting;
       return;
+    }
   }
 }
 
+rgp::Status FirmwareDevice::status() const {
+  rgp::Status s;
+  s.ads = adsOnline;
+  for (size_t i = 0; i < PEDAL_COUNT; ++i) s.ads = s.ads && pedalConnected[i] && pedalSampled[i];
+  s.imu = handles[0].online && handles[1].online;
+  s.angle = s.imu;
+  for (const auto& h : handles)
+    s.angle = s.angle && !h.settling && h.refLocked && isfinite(h.angleDeg) && fabsf(h.angleDeg) <= 3600;
+  s.calibrated = validPedalCalibration() && handles[0].calib.valid && handles[1].calib.valid && !calibration.active;
+  return s;
+}
+bool FirmwareDevice::zeroAngles() {
+  for (auto& h : handles)
+    if (!h.online || h.settling || !h.orientation.hasAbsoluteShaftReference()) return false;
+  for (auto& h : handles) {
+    h.orientation.restartAngleTracking();
+    h.refLocked = true;
+    h.angleDeg = -h.orientation.shaftAngleRad() * RAD_TO_DEG_F;
+  }
+  angleWasLocked = true; // Protocol emits the success event after its ACK.
+  return true;
+}
+void FirmwareDevice::setBeta(float value) {
+  for (auto& h : handles) {
+    if (h.settling) h.restoreBeta = value;
+    else h.orientation.changeBeta(value);
+  }
+}
+void FirmwareDevice::calibrate(uint32_t origin, const std::string& target) {
+  calibration = CalibrationJob();
+  calibration.active = true;
+  calibration.origin = origin;
+  calibration.target = target;
+  calibration.nextSampleMs = millis() + 3000;
+  pinMode(PEDAL_PROBE_PIN, INPUT);
+  restartPedalSampling();
+  protocol.setState(rgp::State::Calibrating, millis());
+  protocol.event("CAL_START," + integer(origin) + "," + target, millis());
+  if (target == "ALL") protocol.event("CAL_MAG_SKIPPED," + integer(origin), millis());
+  protocol.event("CAL_GYRO_START," + integer(origin), millis());
+}
+static void failCalibration() {
+  // The active IMU may be temporarily running with zero bias. Reconnect using its
+  // last committed calibration before allowing normal inputs again.
+  if (calibration.prepared && calibration.handle < 2 && handles[calibration.handle].online)
+    markHandleOffline(handles[calibration.handle]);
+  protocol.error("ERROR,CALIBRATION,READ_FAILED,GYRO,REQ," + integer(calibration.origin), millis());
+  calibration.active = false;
+  protocol.finishOperation();
+  // The connection monitor emits I2C_LOST before STATE,RECOVERING.
+}
+static void updateCalibration() {
+  if (!calibration.active) return;
+  if (!handles[0].online || !handles[1].online) { failCalibration(); return; }
+  if (!due(millis(), calibration.nextSampleMs)) return;
+  auto& h = handles[calibration.handle];
+  if (!calibration.prepared) {
+    // Measure raw gyro readings rather than applying the previous bias twice.
+    calData uncorrected = {};
+    if (h.imu.initImu(uncorrected) != 0) { markHandleOffline(h); failCalibration(); return; }
+    calibration.prepared = true;
+  }
+  h.imu.update();
+  GyroData g = {};
+  h.imu.getGyro(&g);
+  if (!probe(h.bus, h.address) || consumeTimeout(h.bus) ||
+      !isfinite(g.gyroX) || !isfinite(g.gyroY) || !isfinite(g.gyroZ)) {
+    markHandleOffline(h);
+    failCalibration();
+    return;
+  }
+  calibration.sum[0] += g.gyroX;
+  calibration.sum[1] += g.gyroY;
+  calibration.sum[2] += g.gyroZ;
+  calibration.nextSampleMs = millis() + 5;
+  if (++calibration.samples < 400) return;
+  calData result = {};
+  result.valid = true;
+  for (size_t i = 0; i < 3; ++i) result.gyroBias[i] = calibration.sum[i] / calibration.samples;
+  if (h.imu.initImu(result) != 0) { markHandleOffline(h); failCalibration(); return; }
+  h.calib = result;
+  h.orientation.begin(false, Vec3(0, 0, 1), Vec3(-1, 0, 0), protocol.beta());
+  h.refLocked = false;
+  startSettling(h, FILTER_SETTLE_MS);
+  if (++calibration.handle < 2) {
+    calibration.samples = 0;
+    for (auto& sum : calibration.sum) sum = 0;
+    calibration.prepared = false;
+    calibration.nextSampleMs = millis() + 3000;
+    return;
+  }
+  for (auto& handle : handles) handle.settleStartedMs = millis();
+  protocol.event("CAL_GYRO_DONE," + integer(calibration.origin), millis());
+  protocol.event("CAL_DONE," + integer(calibration.origin) + "," + calibration.target, millis());
+  calibration.active = false;
+  protocol.finishOperation();
+  protocol.setState(rgp::State::WaitAngle, millis());
+}
+void FirmwareDevice::scan(uint32_t origin) {
+  scanJob = ScanJob();
+  scanJob.active = true;
+  scanJob.origin = origin;
+  pinMode(PEDAL_PROBE_PIN, INPUT);
+  protocol.event("I2C_SCAN_START," + integer(origin), millis());
+}
+static void restartPedalSampling() {
+  if (!adsOnline) return;
+  // A scan may interrupt a probe conversion. Discard it and obtain a normal sample.
+  normalPedalChannel = 0;
+  pedalAdcState = PedalAdcState::NormalWaiting;
+  startPedalConversion(0);
+}
+static void updateScan() {
+  if (!scanJob.active) return;
+  Wire.beginTransmission(scanJob.address);
+  const uint8_t result = Wire.endTransmission(true);
+  if (consumeTimeout(Wire) || (result != 0 && result != 2 && result != 3)) {
+    protocol.error("ERROR,I2C,READ_FAILED,I2C_SCAN,REQ," + integer(scanJob.origin), millis());
+    scanJob.active = false;
+    protocol.finishOperation();
+    restartPedalSampling();
+    if (protocol.state() != rgp::State::Fatal) {
+      markAdsOffline();
+    }
+    return;
+  }
+  if (result == 0) {
+    ++scanJob.count;
+    protocol.send("SYS", "I2C_DEVICE," + integer(scanJob.origin) + "," + addressText(scanJob.address), millis());
+    if (scanJob.address == ADS_ADDRESS) scanJob.adsFound = true;
+    for (size_t i = 0; i < 2; ++i) if (scanJob.address == handles[i].address) scanJob.handleFound[i] = true;
+  }
+  if (++scanJob.address <= 0x77) return;
+  protocol.event("I2C_SCAN_END," + integer(scanJob.origin) + "," + integer(scanJob.count), millis());
+  scanJob.active = false;
+  protocol.finishOperation();
+  if (protocol.state() != rgp::State::Fatal) {
+    if (!scanJob.adsFound) markAdsOffline();
+    for (size_t i = 0; i < 2; ++i) if (!scanJob.handleFound[i]) markHandleOffline(handles[i]);
+  }
+  restartPedalSampling();
+}
+static void updateState() {
+  if (protocol.state() == rgp::State::Fatal || scanJob.active) return;
+  const uint32_t now = millis();
+  const bool busOnline = adsOnline && handles[0].online && handles[1].online;
+  if (!busOnline && !busFailureReported) {
+    protocol.error("ERROR,I2C,CONNECTION_LOST", now);
+    protocol.event("I2C_LOST", now);
+    busFailureReported = true;
+    connectionWasLost = true;
+  } else if (busOnline && busFailureReported) {
+    protocol.event("I2C_RESTORED", now);
+    busFailureReported = false;
+  }
+  const auto s = device.status();
+  if (s.angle && !angleWasLocked) protocol.event("ANGLE_LOCKED", now);
+  if (!s.angle && angleWasLocked) {
+    protocol.error("ERROR,HANDLE,ANGLE_REFERENCE_INVALID", now);
+    protocol.event("ANGLE_UNLOCKED", now);
+  }
+  angleWasLocked = s.angle;
+  if (calibration.active) return;
+  bool knownDisconnected = false;
+  for (size_t i = 0; i < PEDAL_COUNT; ++i)
+    knownDisconnected = knownDisconnected || (pedalChecked[i] && (!pedalConnected[i] || !pedalSampled[i]));
+  if (!busOnline || knownDisconnected) {
+    connectionWasLost = true;
+    protocol.setState(rgp::State::Recovering, now);
+  } else if (s.ads && s.imu && s.angle && s.calibrated) {
+    protocol.setState(rgp::State::Ready, now);
+    connectionWasLost = false;
+  } else if (!connectionWasLost || s.ads) protocol.setState(rgp::State::WaitAngle, now);
+}
 static void outputLatestInputs() {
   const uint32_t nowUs = micros();
-  if (!due(nowUs, nextOutputUs)) return;
-
-  nextOutputUs += OUTPUT_PERIOD_US;
-  // Skip missed slots instead of emitting a burst after an exceptional delay.
-  if (due(nowUs, nextOutputUs)) {
-    nextOutputUs = nowUs + OUTPUT_PERIOD_US;
+  const uint32_t period = protocol.telemetryPeriodUs();
+  static uint32_t scheduledPeriod = 10000;
+  if (period != scheduledPeriod) {
+    scheduledPeriod = period;
+    nextOutputUs = nowUs + period;
   }
-
-  const float missing = NAN;
-  Serial.printf("%.2f,%.2f,%.2f,%.2f\n",
-    adsOnline && pedalConnected[0] ? pedals[0] : missing,
-    handles[0].online && !handles[0].settling ? handles[0].angleDeg : missing,
-    adsOnline && pedalConnected[1] ? pedals[1] : missing,
-    handles[1].online && !handles[1].settling ? handles[1].angleDeg : missing);
+  if (!due(nowUs, nextOutputUs)) return;
+  nextOutputUs += period;
+  if (due(nowUs, nextOutputUs)) nextOutputUs = nowUs + period;
+  const rgp::Inputs snapshot = {{handles[0].angleDeg, handles[1].angleDeg},
+    {pedals[0], pedals[1]}, {pedals[2], pedals[3]}};
+  protocol.telemetry(snapshot, millis());
 }
-
 void setup() {
   Serial.begin(115200);
+  protocol.begin();
+  protocol.setState(rgp::State::Initializing, millis());
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(100000);
   Wire.setTimeOut(20);
   pinMode(PEDAL_PROBE_PIN, INPUT);
-  Serial.println("[INPUT] CSV: pedal1,handle1_deg,pedal2,handle2_deg");
-  Serial.println("[INPUT] Send 'c' to calibrate both handles.");
   for (size_t i = 0; i < 2; ++i) {
+    // Gyro calibration remains explicit. Do not claim valid calibration before measurement.
     if (!initializeHandle(handles[i], i)) {
       handles[i].retryAtMs = millis() + RECONNECT_RETRY_MS;
-      Serial.printf("[HANDLE%u] Not found; retrying.\n", unsigned(i + 1));
+      protocol.error("ERROR,IMU,INIT_FAILED", millis());
     }
+    serviceSerial();
   }
-  for (auto& h : handles) {
-    if (h.online) h.settleStartedMs = millis();
-  }
-  nextOutputUs = micros() + OUTPUT_PERIOD_US;
+  // Validate independent pedal parameters; gyro calibration is requested explicitly by CMD.
+  protocol.setState(rgp::State::Calibrating, millis());
+  if (!validPedalCalibration()) {
+    protocol.error("FATAL,CALIBRATION,INIT_FAILED", millis());
+    protocol.setState(rgp::State::Fatal, millis());
+  } else protocol.setState(rgp::State::WaitAngle, millis());
+  for (auto& h : handles) if (h.online) h.settleStartedMs = millis();
+  nextOutputUs = micros() + protocol.telemetryPeriodUs();
 }
-
 void loop() {
-  while (Serial.available()) {
-    const char c = char(Serial.read());
-    if (c == 'c' || c == 'C') {
-      Serial.println("[INPUT] Starting handle calibration.");
-      for (size_t i = 0; i < 2; ++i) calibrateHandle(handles[i], i);
-      // Start the settling interval together after all blocking calibrations.
-      for (auto& h : handles) {
-        if (h.online && h.settling) h.settleStartedMs = millis();
-      }
-      continue;
+  serviceSerial();
+  if (scanJob.active) updateScan();
+  else if (protocol.state() != rgp::State::Fatal) {
+    updatePedals();
+    for (size_t i = 0; i < 2; ++i) {
+      updateHandle(handles[i], i);
+      serviceSerial();
+      if (scanJob.active) break;
     }
-    for (auto& h : handles) {
-      if (!h.configured) continue;
-      if (c == 'z' || c == 'Z') {
-        h.orientation.restartAngleTracking();
-        h.refLocked = true;
-      } else if (c == 'b' || c == 'B') {
-        const float beta = constrain((h.settling ? h.restoreBeta : h.orientation.getBeta())
-                                    + (c == 'b' ? 0.05f : -0.05f), 0.01f, 1.0f);
-        if (h.settling) h.restoreBeta = beta;
-        else h.orientation.changeBeta(beta);
-      }
-    }
+    if (!scanJob.active) updateCalibration();
   }
-  updatePedals();
-  for (size_t i = 0; i < 2; ++i) updateHandle(handles[i], i);
+  updateState();
   outputLatestInputs();
-  delay(1); // Yield without making the output period depend on loop duration.
+  delay(1);
 }

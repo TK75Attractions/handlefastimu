@@ -28,6 +28,7 @@ public:
 
   // True when the current setup has an absolute reference for shaft angle.
   bool hasAbsoluteShaftReference();
+  bool canLockShaftReference() const { return latestGravityProjectionUsable; }
 
   // Update filter using either full mag+imu or imu-only data.
   void updateWithMag(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz);
