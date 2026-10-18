@@ -258,7 +258,8 @@ void Protocol::command(const Message& m, uint32_t now) {
   if (name != "OPEN_SESSION" && session.empty()) result = "NOT_READY," + std::string(stateName(currentState));
   else if (invalid) result = "INVALID_ARG," + number(uint32_t(invalid));
   else if (!known || (name == "CALIBRATE" && arg(0) == "MAG") ||
-           ((name == "SET_RATE" || name == "SET_STREAM") && arg(0) != "TEL")) result = "UNSUPPORTED";
+           (name == "SET_RATE" && arg(0) != "TEL") ||
+           (name == "SET_STREAM" && arg(0) == "IMU")) result = "UNSUPPORTED";
   else if (busy() && (name == "CALIBRATE" || name == "SCAN_I2C"))
     result = "BUSY," + activeCommand + "," + number(activeOrigin);
   else if ((name == "ANGLE_ZERO" || name == "SET_BETA" || name == "CALIBRATE") &&
@@ -274,7 +275,7 @@ void Protocol::command(const Message& m, uint32_t now) {
       (s.imu ? "1" : "0") + "," + (s.angle ? "1" : "0") + "," + (s.calibrated ? "1" : "0");
   } else if (name == "GET_CONFIG") {
     result = "OK,TEL_RATE," + number(telRate) + ",IMU_RATE,20,TEL_STREAM," + (telStream ? "1" : "0") +
-      ",IMU_STREAM,0,DBG_STREAM,0,BETA," + fixed(currentBeta, 3);
+      ",IMU_STREAM,0,DBG_STREAM," + (dbgStream ? "1" : "0") + ",BETA," + fixed(currentBeta, 3);
   } else if (name == "ANGLE_ZERO") {
     zeroed = device.zeroAngles();
     result = zeroed ? "OK" : "FAILED,ANGLE_REFERENCE_INVALID";
@@ -291,9 +292,10 @@ void Protocol::command(const Message& m, uint32_t now) {
     result = "OK,TEL," + number(rate);
   } else if (name == "SET_STREAM") {
     const bool enabled = arg(1) == "1";
-    if (telStream != enabled) changed = std::string("TEL_STREAM,") + (enabled ? "1" : "0");
-    telStream = enabled;
-    result = std::string("OK,TEL,") + (enabled ? "1" : "0");
+    bool& stream = arg(0) == "DBG" ? dbgStream : telStream;
+    if (stream != enabled) changed = arg(0) + "_STREAM," + (enabled ? "1" : "0");
+    stream = enabled;
+    result = "OK," + arg(0) + "," + (enabled ? "1" : "0");
   } else if (name == "CALIBRATE" || name == "SCAN_I2C") {
     activeCommand = name;
     activeOrigin = m.seq;

@@ -1,0 +1,226 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="1700" viewBox="0 0 2600 1700">
+<rect width="100%" height="100%" fill="white"/>
+<style>text{font-family:Arial,"Hiragino Sans","Noto Sans CJK JP",sans-serif;fill:#183047;font-size:18px}.title{font-size:34px;font-weight:bold}.h{font-size:23px;font-weight:bold}.ref{font-size:21px;font-weight:bold}.pin{font-size:16px}.small{font-size:14px;fill:#587082}.net{font-size:15px;font-weight:bold}.board{font-size:16px;font-weight:bold;fill:#52697b}</style>
+<text x="42" y="52" class="title">Rev.9　ESP32・ADS1115・ペダル2個・MPU6050 2個　統合電気回路図</text>
+<text x="42" y="84" class="small">全回路を1枚に統合。線が接続される箇所は●、交差だけの箇所は接続点なし。基板上の穴番号は実装図を参照。</text>
+<line x1="42" y1="108" x2="2558" y2="108" stroke="#9db1c0" stroke-width="2" stroke-linecap="round"/>
+<text x="75" y="153" class="board">メイン基板側＋外部ペダル</text>
+<rect x="1810" y="165" width="720" height="610" rx="15" fill="#f3fbf6" fill-opacity="0.85" stroke="#67a07c" stroke-width="2" stroke-dasharray="10 8"/>
+<text x="1830" y="195" class="board">Cタイプ小基板 IMU1</text>
+<rect x="1810" y="825" width="720" height="610" rx="15" fill="#f3fbf6" fill-opacity="0.85" stroke="#67a07c" stroke-width="2" stroke-dasharray="10 8"/>
+<text x="1830" y="855" class="board">Cタイプ小基板 IMU2</text>
+<line x1="120" y1="205" x2="2470" y2="205" stroke="#d43c51" stroke-width="7" stroke-linecap="round"/>
+<text x="125" y="192" class="net">3V3 共通電源</text>
+<line x1="120" y1="1530" x2="2470" y2="1530" stroke="#263746" stroke-width="7" stroke-linecap="round"/>
+<text x="125" y="1560" class="net">GND 共通</text>
+<rect x="105" y="300" width="360" height="500" rx="9" fill="#f5f8fb" stroke="#506d85" stroke-width="2.5"/>
+<text x="125" y="336" class="ref">U1  ESP32-DevKitC-32E</text>
+<text x="125" y="366" class="small">USB給電。3V3ピンからセンサーへ給電</text>
+<text x="125" y="390" class="pin">USB 5V</text>
+<line x1="55" y1="384" x2="105" y2="384" stroke="#677f93" stroke-width="4" stroke-linecap="round"/>
+<text x="50" y="390" class="small" text-anchor="end">USB</text>
+<text x="445" y="371" class="pin" text-anchor="end">3V3</text>
+<line x1="465" y1="365" x2="520" y2="365" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<text x="445" y="431" class="pin" text-anchor="end">GND</text>
+<line x1="465" y1="425" x2="520" y2="425" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<text x="445" y="531" class="pin" text-anchor="end">GPIO21 / SDA</text>
+<line x1="465" y1="525" x2="520" y2="525" stroke="#188849" stroke-width="4" stroke-linecap="round"/>
+<text x="445" y="596" class="pin" text-anchor="end">GPIO22 / SCL</text>
+<line x1="465" y1="590" x2="520" y2="590" stroke="#2673c7" stroke-width="4" stroke-linecap="round"/>
+<text x="445" y="686" class="pin" text-anchor="end">GPIO27</text>
+<line x1="465" y1="680" x2="520" y2="680" stroke="#e79610" stroke-width="4" stroke-linecap="round"/>
+<polyline points="520,365 560,365 560,205" fill="none" stroke="#d43c51" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="560" cy="205" r="6" fill="#d43c51" stroke="white" stroke-width="1.5"/>
+<polyline points="520,425 590,425 590,1530" fill="none" stroke="#263746" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="590" cy="1530" r="6" fill="#263746" stroke="white" stroke-width="1.5"/>
+<line x1="520" y1="525" x2="1038" y2="525" stroke="#188849" stroke-width="6" stroke-linecap="round"/>
+<text x="540" y="512" class="net">SDA</text>
+<line x1="520" y1="590" x2="1038" y2="590" stroke="#2673c7" stroke-width="6" stroke-linecap="round"/>
+<text x="540" y="577" class="net">SCL</text>
+<polyline points="760,525 760,255 1740,255 1740,1180" fill="none" stroke="#188849" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="760" cy="525" r="6" fill="#188849" stroke="white" stroke-width="1.5"/>
+<polyline points="800,590 800,280 1715,280 1715,1245" fill="none" stroke="#2673c7" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="800" cy="590" r="6" fill="#2673c7" stroke="white" stroke-width="1.5"/>
+<rect x="1080" y="300" width="430" height="590" rx="9" fill="#f5f8fb" stroke="#506d85" stroke-width="2.5"/>
+<text x="1100" y="336" class="ref">U2  ADS1115</text>
+<text x="1100" y="366" class="small">汎用1×10ピン基板 / I²C 0x48 / 回路面を上</text>
+<line x1="1038" y1="390" x2="1080" y2="390" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<text x="1092" y="396" class="pin">VDD</text>
+<line x1="1038" y1="455" x2="1080" y2="455" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<text x="1092" y="461" class="pin">GND</text>
+<line x1="1038" y1="525" x2="1080" y2="525" stroke="#188849" stroke-width="4" stroke-linecap="round"/>
+<text x="1092" y="531" class="pin">SDA</text>
+<line x1="1038" y1="590" x2="1080" y2="590" stroke="#2673c7" stroke-width="4" stroke-linecap="round"/>
+<text x="1092" y="596" class="pin">SCL</text>
+<line x1="1038" y1="655" x2="1080" y2="655" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<text x="1092" y="661" class="pin">ADDR</text>
+<line x1="1038" y1="730" x2="1080" y2="730" stroke="#8c55aa" stroke-width="4" stroke-linecap="round"/>
+<text x="1092" y="736" class="pin">A0</text>
+<line x1="1038" y1="795" x2="1080" y2="795" stroke="#ca5089" stroke-width="4" stroke-linecap="round"/>
+<text x="1092" y="801" class="pin">A1</text>
+<polyline points="1038,390 1000,390 1000,205" fill="none" stroke="#d43c51" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1000" cy="205" r="6" fill="#d43c51" stroke="white" stroke-width="1.5"/>
+<polyline points="1038,455 970,455 970,1530" fill="none" stroke="#263746" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="970" cy="1530" r="6" fill="#263746" stroke="white" stroke-width="1.5"/>
+<circle cx="1038" cy="525" r="6" fill="#188849" stroke="white" stroke-width="1.5"/>
+<circle cx="1038" cy="590" r="6" fill="#2673c7" stroke="white" stroke-width="1.5"/>
+<polyline points="1038,655 1015,655 1015,695 970,695" fill="none" stroke="#263746" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="970" cy="695" r="6" fill="#263746" stroke="white" stroke-width="1.5"/>
+<text x="1110" y="822" class="small">Rev.9配置の左→右：</text>
+<text x="1110" y="846" class="small">A3,A2,A1,A0,ALRT,ADDR,SDA,SCL,GND,VDD</text>
+<text x="1110" y="874" class="small">ALRT、A2、A3：未接続</text>
+<line x1="1590" y1="205" x2="1590" y2="849.5" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<line x1="1590" y1="885.5" x2="1590" y2="1530" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<line x1="1570" y1="849.5" x2="1610" y2="849.5" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<line x1="1570" y1="885.5" x2="1610" y2="885.5" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<text x="1622" y="863.5" class="pin">C3 100nF</text>
+<text x="1545" y="900" class="small">ADS VDD付近</text>
+<line x1="1690" y1="205" x2="1690" y2="849.5" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<line x1="1690" y1="885.5" x2="1690" y2="1530" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<line x1="1670" y1="849.5" x2="1710" y2="849.5" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<line x1="1670" y1="885.5" x2="1710" y2="885.5" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<text x="1718" y="849.5" class="pin">＋</text>
+<text x="1722" y="863.5" class="pin">C6 10µF</text>
+<text x="1645" y="900" class="small">メイン電源</text>
+<polyline points="1038,730 905,730 905,1050" fill="none" stroke="#8c55aa" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="915" y="717" class="net">ADC_A0</text>
+<polyline points="1038,795 980,795 980,1360" fill="none" stroke="#ca5089" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="990" y="782" class="net">ADC_A1</text>
+<polyline points="520,680 640,680 640,910" fill="none" stroke="#e79610" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="640" cy="680" r="6" fill="#e79610" stroke="white" stroke-width="1.5"/>
+<line x1="640" y1="820" x2="662" y2="820" stroke="#e79610" stroke-width="4" stroke-linecap="round"/>
+<line x1="828" y1="820" x2="850" y2="820" stroke="#e79610" stroke-width="4" stroke-linecap="round"/>
+<rect x="662" y="805" width="166" height="30" rx="2" fill="#fffdf5" stroke="#e79610" stroke-width="2.5"/>
+<text x="745.0" y="796" class="ref" text-anchor="middle">R7</text>
+<text x="745.0" y="826" class="pin" text-anchor="middle">100kΩ</text>
+<polyline points="850,820 905,820" fill="none" stroke="#8c55aa" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="905" cy="820" r="6" fill="#8c55aa" stroke="white" stroke-width="1.5"/>
+<line x1="640" y1="910" x2="662" y2="910" stroke="#e79610" stroke-width="4" stroke-linecap="round"/>
+<line x1="828" y1="910" x2="850" y2="910" stroke="#e79610" stroke-width="4" stroke-linecap="round"/>
+<rect x="662" y="895" width="166" height="30" rx="2" fill="#fffdf5" stroke="#e79610" stroke-width="2.5"/>
+<text x="745.0" y="886" class="ref" text-anchor="middle">R8</text>
+<text x="745.0" y="916" class="pin" text-anchor="middle">100kΩ</text>
+<polyline points="850,910 980,910" fill="none" stroke="#ca5089" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="980" cy="910" r="6" fill="#ca5089" stroke="white" stroke-width="1.5"/>
+<text x="675" y="960" class="small">GPIO27側だけ共通。R7/R8のADS側はA0/A1へ別々に接続。</text>
+<text x="100" y="915" class="h">外部ペダル</text>
+<line x1="150" y1="950" x2="150" y2="205" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<circle cx="150" cy="205" r="6" fill="#d43c51" stroke="white" stroke-width="1.5"/>
+<line x1="150" y1="950" x2="150" y2="972" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<rect x="135" y="972" width="30" height="156" fill="#fffdf5" stroke="#536a7b" stroke-width="2.5"/>
+<line x1="150" y1="1128" x2="150" y2="1150" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<line x1="225" y1="1050.0" x2="170" y2="1050.0" stroke="#91691b" stroke-width="4" stroke-linecap="round"/>
+<polyline points="170,1050.0 182,1042.0" fill="none" stroke="#91691b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="110" y="935" class="ref">P1 ペダル1</text>
+<text x="98" y="1056.0" class="pin" text-anchor="end">10kΩ B</text>
+<line x1="150" y1="1150" x2="235" y2="1150" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<line x1="235" y1="1150" x2="235" y2="1530" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<circle cx="235" cy="1530" r="6" fill="#263746" stroke="white" stroke-width="1.5"/>
+<line x1="225" y1="1050.0" x2="300" y2="1050.0" stroke="#91691b" stroke-width="4" stroke-linecap="round"/>
+<text x="240" y="1038.0" class="net">SIG1</text>
+<line x1="300" y1="1050.0" x2="322" y2="1050.0" stroke="#91691b" stroke-width="4" stroke-linecap="round"/>
+<line x1="508" y1="1050.0" x2="530" y2="1050.0" stroke="#91691b" stroke-width="4" stroke-linecap="round"/>
+<rect x="322" y="1035.0" width="186" height="30" rx="2" fill="#fffdf5" stroke="#91691b" stroke-width="2.5"/>
+<text x="415.0" y="1026.0" class="ref" text-anchor="middle">R1</text>
+<text x="415.0" y="1056.0" class="pin" text-anchor="middle">1kΩ</text>
+<polyline points="530,1050.0 905,1050.0" fill="none" stroke="#8c55aa" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="905" cy="1050.0" r="6" fill="#8c55aa" stroke="white" stroke-width="1.5"/>
+<line x1="905" y1="1050.0" x2="905" y2="1272.0" stroke="#8c55aa" stroke-width="4" stroke-linecap="round"/>
+<line x1="905" y1="1308.0" x2="905" y2="1530" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<line x1="885" y1="1272.0" x2="925" y2="1272.0" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<line x1="885" y1="1308.0" x2="925" y2="1308.0" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<text x="937" y="1286.0" class="pin">C1 100nF</text>
+<line x1="70" y1="1260" x2="70" y2="205" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<circle cx="70" cy="205" r="6" fill="#d43c51" stroke="white" stroke-width="1.5"/>
+<line x1="70" y1="1260" x2="150" y2="1260" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<line x1="150" y1="1260" x2="150" y2="1282" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<rect x="135" y="1282" width="30" height="156" fill="#fffdf5" stroke="#536a7b" stroke-width="2.5"/>
+<line x1="150" y1="1438" x2="150" y2="1460" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<line x1="225" y1="1360.0" x2="170" y2="1360.0" stroke="#91691b" stroke-width="4" stroke-linecap="round"/>
+<polyline points="170,1360.0 182,1352.0" fill="none" stroke="#91691b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="110" y="1245" class="ref">P2 ペダル2</text>
+<text x="98" y="1366.0" class="pin" text-anchor="end">10kΩ B</text>
+<line x1="150" y1="1460" x2="150" y2="1530" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<circle cx="150" cy="1530" r="6" fill="#263746" stroke="white" stroke-width="1.5"/>
+<line x1="225" y1="1360.0" x2="300" y2="1360.0" stroke="#91691b" stroke-width="4" stroke-linecap="round"/>
+<text x="240" y="1348.0" class="net">SIG2</text>
+<line x1="300" y1="1360.0" x2="322" y2="1360.0" stroke="#91691b" stroke-width="4" stroke-linecap="round"/>
+<line x1="508" y1="1360.0" x2="530" y2="1360.0" stroke="#91691b" stroke-width="4" stroke-linecap="round"/>
+<rect x="322" y="1345.0" width="186" height="30" rx="2" fill="#fffdf5" stroke="#91691b" stroke-width="2.5"/>
+<text x="415.0" y="1336.0" class="ref" text-anchor="middle">R2</text>
+<text x="415.0" y="1366.0" class="pin" text-anchor="middle">1kΩ</text>
+<polyline points="530,1360.0 980,1360.0" fill="none" stroke="#ca5089" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="980" cy="1360.0" r="6" fill="#ca5089" stroke="white" stroke-width="1.5"/>
+<line x1="980" y1="1360.0" x2="980" y2="1427.0" stroke="#ca5089" stroke-width="4" stroke-linecap="round"/>
+<line x1="980" y1="1463.0" x2="980" y2="1530" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<line x1="960" y1="1427.0" x2="1000" y2="1427.0" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<line x1="960" y1="1463.0" x2="1000" y2="1463.0" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<text x="1012" y="1441.0" class="pin">C2 100nF</text>
+<rect x="1900" y="255" width="410" height="405" rx="9" fill="#e7f4eb" stroke="#4a8060" stroke-width="2.5"/>
+<text x="1920" y="291" class="ref">U3  MPU6050 IMU1</text>
+<text x="1920" y="321" class="small">Adafruit #3886 / ADDR開放 / 0x68</text>
+<line x1="1858" y1="350" x2="1900" y2="350" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<text x="1912" y="356" class="pin">VIN</text>
+<line x1="1858" y1="415" x2="1900" y2="415" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<text x="1912" y="421" class="pin">GND</text>
+<line x1="1858" y1="525" x2="1900" y2="525" stroke="#188849" stroke-width="4" stroke-linecap="round"/>
+<text x="1912" y="531" class="pin">SDA</text>
+<line x1="1858" y1="590" x2="1900" y2="590" stroke="#2673c7" stroke-width="4" stroke-linecap="round"/>
+<text x="1912" y="596" class="pin">SCL</text>
+<polyline points="1858,350 1840,350 1840,205" fill="none" stroke="#d43c51" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1840" cy="205" r="6" fill="#d43c51" stroke="white" stroke-width="1.5"/>
+<polyline points="1858,415 1818,415 1818,1530" fill="none" stroke="#263746" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1818" cy="1530" r="6" fill="#263746" stroke="white" stroke-width="1.5"/>
+<line x1="1740" y1="525" x2="1858" y2="525" stroke="#188849" stroke-width="5" stroke-linecap="round"/>
+<circle cx="1740" cy="525" r="6" fill="#188849" stroke="white" stroke-width="1.5"/>
+<circle cx="1858" cy="525" r="6" fill="#188849" stroke="white" stroke-width="1.5"/>
+<line x1="1715" y1="590" x2="1858" y2="590" stroke="#2673c7" stroke-width="5" stroke-linecap="round"/>
+<circle cx="1715" cy="590" r="6" fill="#2673c7" stroke="white" stroke-width="1.5"/>
+<circle cx="1858" cy="590" r="6" fill="#2673c7" stroke="white" stroke-width="1.5"/>
+<text x="1930" y="695" class="small">3Vo、INT：未接続</text>
+<text x="1930" y="725" class="small">AD0追加配線なし。裏面ADDRジャンパーは開放。</text>
+<line x1="2380" y1="205" x2="2380" y2="439.5" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<line x1="2380" y1="475.5" x2="2380" y2="710" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<line x1="2360" y1="439.5" x2="2400" y2="439.5" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<line x1="2360" y1="475.5" x2="2400" y2="475.5" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<text x="2412" y="453.5" class="pin">C4 100nF</text>
+<line x1="2380" y1="710" x2="1818" y2="710" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<circle cx="1818" cy="710" r="6" fill="#263746" stroke="white" stroke-width="1.5"/>
+<text x="2320" y="745" class="small">VIN―GND間</text>
+<rect x="1900" y="915" width="410" height="405" rx="9" fill="#e7f4eb" stroke="#4a8060" stroke-width="2.5"/>
+<text x="1920" y="951" class="ref">U4  MPU6050 IMU2</text>
+<text x="1920" y="981" class="small">Adafruit #3886 / ADDR短絡 / 0x69</text>
+<line x1="1858" y1="1010" x2="1900" y2="1010" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<text x="1912" y="1016" class="pin">VIN</text>
+<line x1="1858" y1="1075" x2="1900" y2="1075" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<text x="1912" y="1081" class="pin">GND</text>
+<line x1="1858" y1="1180" x2="1900" y2="1180" stroke="#188849" stroke-width="4" stroke-linecap="round"/>
+<text x="1912" y="1186" class="pin">SDA</text>
+<line x1="1858" y1="1245" x2="1900" y2="1245" stroke="#2673c7" stroke-width="4" stroke-linecap="round"/>
+<text x="1912" y="1251" class="pin">SCL</text>
+<polyline points="1858,1010 1785,1010 1785,205" fill="none" stroke="#d43c51" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1785" cy="205" r="6" fill="#d43c51" stroke="white" stroke-width="1.5"/>
+<polyline points="1858,1075 1760,1075 1760,1530" fill="none" stroke="#263746" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1760" cy="1530" r="6" fill="#263746" stroke="white" stroke-width="1.5"/>
+<line x1="1740" y1="1180" x2="1858" y2="1180" stroke="#188849" stroke-width="5" stroke-linecap="round"/>
+<circle cx="1740" cy="1180" r="6" fill="#188849" stroke="white" stroke-width="1.5"/>
+<circle cx="1858" cy="1180" r="6" fill="#188849" stroke="white" stroke-width="1.5"/>
+<line x1="1715" y1="1245" x2="1858" y2="1245" stroke="#2673c7" stroke-width="5" stroke-linecap="round"/>
+<circle cx="1715" cy="1245" r="6" fill="#2673c7" stroke="white" stroke-width="1.5"/>
+<circle cx="1858" cy="1245" r="6" fill="#2673c7" stroke="white" stroke-width="1.5"/>
+<text x="1930" y="1355" class="small">3Vo、INT：未接続</text>
+<text x="1930" y="1385" class="small">裏面ADDRジャンパー2パッドをはんだで短絡。</text>
+<line x1="2380" y1="865" x2="2380" y2="1099.5" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<line x1="2380" y1="1135.5" x2="2380" y2="1370" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<line x1="2360" y1="1099.5" x2="2400" y2="1099.5" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<line x1="2360" y1="1135.5" x2="2400" y2="1135.5" stroke="#80641d" stroke-width="3" stroke-linecap="round"/>
+<text x="2412" y="1113.5" class="pin">C5 100nF</text>
+<line x1="2380" y1="865" x2="1785" y2="865" stroke="#d43c51" stroke-width="4" stroke-linecap="round"/>
+<circle cx="1785" cy="865" r="6" fill="#d43c51" stroke="white" stroke-width="1.5"/>
+<line x1="2380" y1="1370" x2="1760" y2="1370" stroke="#263746" stroke-width="4" stroke-linecap="round"/>
+<circle cx="1760" cy="1370" r="6" fill="#263746" stroke="white" stroke-width="1.5"/>
+<text x="2320" y="1405" class="small">VIN―GND間</text>
+<text x="1840" y="790" class="small">IMUケーブル各4芯：赤=3V3、黒=GND、緑=SDA、青=SCL（AWG24より線）</text>
+<text x="70" y="1648" class="small">注：R7/R8によりGPIO27出力はA0/A1へ影響する。GPIO27入力時もR7+R8を介してA0/A1が弱く結合する。</text>
+<text x="70" y="1675" class="small">通電前に3V3―GND短絡なし、各ネットの導通、IMU1=0x68・IMU2=0x69・ADS=0x48を確認する。</text>
+</svg>

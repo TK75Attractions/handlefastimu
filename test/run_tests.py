@@ -26,3 +26,13 @@ with tempfile.TemporaryDirectory(prefix="rgp-tests-") as temporary:
     ], check=True)
     for mode in ("both", "p1", "p2", "none"):
         subprocess.run([str(firmware), mode], check=True)
+
+    merged = Path(temporary) / "merged_features_test"
+    subprocess.run([
+        os.environ.get("CXX", "c++"), "-std=c++11", "-Wall", "-Wextra", "-Werror",
+        "-g", "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
+        "-I", str(ROOT / "test/stubs"), "-I", str(ROOT / "src"),
+        str(ROOT / "src/rgp_protocol.cpp"), str(ROOT / "test/merged_features_test.cpp"),
+        "-o", str(merged),
+    ], check=True)
+    subprocess.run([str(merged)], check=True)

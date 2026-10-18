@@ -1,0 +1,38 @@
+{
+  "base": "Rev.8",
+  "main_board_routes_unchanged": true,
+  "IMU": [
+    {
+      "imu": 1,
+      "wires": 9,
+      "bare": 3,
+      "insulated": 6,
+      "nets": 4,
+      "collinear_overlaps": 0,
+      "unused_pins": [
+        "INT",
+        "XCL",
+        "XDA"
+      ],
+      "AD0": "GND",
+      "mechanical_nominal_check": "pass",
+      "hardware_verified": false
+    },
+    {
+      "imu": 2,
+      "wires": 9,
+      "bare": 3,
+      "insulated": 6,
+      "nets": 4,
+      "collinear_overlaps": 0,
+      "unused_pins": [
+        "INT",
+        "XCL",
+        "XDA"
+      ],
+      "AD0": "3V3",
+      "mechanical_nominal_check": "pass",
+      "hardware_verified": false
+    }
+  ]
+}
