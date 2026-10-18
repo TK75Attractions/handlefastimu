@@ -19,7 +19,8 @@ ImuManager::ImuManager(TwoWire& bus) : wire(bus), imuMpu6050(bus), imuMpu6500(bu
   imuMpu9250(bus), imuMpu9255(bus), imuMpu6515(bus), imuMpu6886(bus),
   imuIcm20689(bus), imuIcm20690(bus) {}
 bool ImuManager::selectAtAddress(uint8_t address) { imuAddress = address; return mockDevices[address]; }
-uint8_t ImuManager::getWhoAmI() { return 0x68; }
+uint8_t mockImuIdentities[2] = {0x68, 0x68};
+uint8_t ImuManager::getWhoAmI() { return mockImuIdentities[imuAddress == 0x69 ? 1 : 0]; }
 uint8_t ImuManager::getImuAddress() { return imuAddress; }
 int ImuManager::initImu(calData&) { return mockDevices[imuAddress] ? 0 : -1; }
 bool ImuManager::hasMagnetometer() { return false; }
@@ -162,4 +163,5 @@ int main() {
     require(contains("ACK", "9,GET_STATUS,OK,FATAL,1,1,1,1") && output("TEL").empty(), "FATAL status remains accessible");
     std::cout << "PASS: firmware simulation, " << assertions << " assertions (hardware/filter doubles).\n";
   } catch (const std::exception& e) { std::cerr << "FAIL: " << e.what() << '\n'; return 1; }
+  return 0;
 }

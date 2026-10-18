@@ -6,7 +6,7 @@
 #include "orientation.hpp"
 #include "rgp_protocol.hpp"
 
-// All inputs share one bus; AD0 selects each MPU6050 address.
+// All inputs share one bus; AD0 selects each player's IMU address.
 constexpr uint8_t I2C_SDA = 21;
 constexpr uint8_t I2C_SCL = 22;
 constexpr uint8_t HANDLE1_ADDRESS = 0x68;
@@ -203,8 +203,8 @@ static void startSettling(HandleInput& h, uint32_t duration) {
 }
 static bool initializeHandle(HandleInput& h, size_t index) {
   consumeTimeout(h.bus);
-  if (!h.imu.selectAtAddress(h.address) || h.imu.getWhoAmI() != 0x68 ||
-      h.imu.initImu(h.calib) != 0) return false;
+  // ImuManager selects the driver by WHO_AM_I; P1/P2 may use different models.
+  if (!h.imu.selectAtAddress(h.address) || h.imu.initImu(h.calib) != 0) return false;
   h.hasMag = h.imu.hasMagnetometer();
   protocol.send("SYS", "DEVICE,IMU," + addressText(h.address) + "," + addressText(h.imu.getWhoAmI()), millis());
   protocol.event("IMU_FOUND", millis());
