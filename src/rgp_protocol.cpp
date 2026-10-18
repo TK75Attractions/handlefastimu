@@ -190,7 +190,7 @@ void Protocol::receive(uint8_t byte, uint32_t now) {
 void Protocol::tick(uint32_t now) { decoder.expire(now); }
 bool Protocol::telemetry(const Inputs& inputs, uint32_t now) {
   const Status s = device.status();
-  if (currentState != State::Ready || !telStream || busy() || !s.ads || !s.imu ||
+  if (currentState != State::Ready || !telStream || busy() || !s.imu ||
       !s.angle || !s.calibrated || !validInputs(inputs)) return false;
   send("TEL", fixed(inputs.handle[0], 2) + "," + fixed(inputs.accel[0], 3) + "," +
        fixed(inputs.brake[0], 3) + "," + fixed(inputs.handle[1], 2) + "," +
@@ -311,7 +311,7 @@ void Protocol::command(const Message& m, uint32_t now) {
     event("ANGLE_RESET", now);
     event("ANGLE_LOCKED", now);
     const Status s = device.status();
-    if (s.ads && s.imu && s.angle && s.calibrated) setState(State::Ready, now);
+    if (s.imu && s.angle && s.calibrated) setState(State::Ready, now);
   }
   if (startCal) device.calibrate(m.seq, arg(0));
   if (startScan) device.scan(m.seq);

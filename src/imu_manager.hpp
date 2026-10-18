@@ -51,10 +51,16 @@ private:
   MPU6886 imuMpu6886;
   ICM20689 imuIcm20689;
   ICM20690 imuIcm20690;
+  IMU_Generic imuGeneric;
   IMUBase* imu = nullptr;
   uint8_t imuAddress = 0;
   uint8_t whoAmIVal = 0xFF;
   bool hasMag = false;
+  calData genericCalibration = {};
+  AccelData genericAccel = {};
+  GyroData genericGyro = {};
+  bool readRegisters(uint8_t reg, uint8_t* data, uint8_t count);
+  bool writeRegister(uint8_t reg, uint8_t value);
   bool probeI2CAddress(uint8_t address);
   uint8_t readWhoAmILocal(uint8_t address);
 };

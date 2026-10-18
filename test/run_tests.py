@@ -24,5 +24,5 @@ with tempfile.TemporaryDirectory(prefix="rgp-tests-") as temporary:
         str(ROOT / "src/rgp_protocol.cpp"), str(ROOT / "test/firmware_test.cpp"),
         "-o", str(firmware),
     ], check=True)
-    for mode in ("both", "p1", "p2", "none"):
+    for mode in ("both", "p1", "p2", "none", "pedal-open", "no-ads"):
         subprocess.run([str(firmware), mode], check=True)

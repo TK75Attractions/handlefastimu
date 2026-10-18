@@ -15,11 +15,12 @@ TwoWire Wire;
 #include <stdexcept>
 
 // Fake only the hardware wrappers and orientation estimates; the application is unchanged.
+uint8_t mockImuIdentities[2] = {0x68, 0x68};
+#ifndef FIRMWARE_REAL_IMU_MANAGER
 ImuManager::ImuManager(TwoWire& bus) : wire(bus), imuMpu6050(bus), imuMpu6500(bus),
   imuMpu9250(bus), imuMpu9255(bus), imuMpu6515(bus), imuMpu6886(bus),
-  imuIcm20689(bus), imuIcm20690(bus) {}
+  imuIcm20689(bus), imuIcm20690(bus), imuGeneric(bus) {}
 bool ImuManager::selectAtAddress(uint8_t address) { imuAddress = address; return mockDevices[address]; }
-uint8_t mockImuIdentities[2] = {0x68, 0x68};
 uint8_t ImuManager::getWhoAmI() { return mockImuIdentities[imuAddress == 0x69 ? 1 : 0]; }
 uint8_t ImuManager::getImuAddress() { return imuAddress; }
 int ImuManager::initImu(calData&) { return mockDevices[imuAddress] ? 0 : -1; }
@@ -27,6 +28,7 @@ bool ImuManager::hasMagnetometer() { return false; }
 void ImuManager::update() {}
 void ImuManager::getAccel(AccelData* out) { *out = {-1, 0, 0}; }
 void ImuManager::getGyro(GyroData* out) { *out = {.1f, .2f, .3f}; }
+#endif
 void Orientation::begin(bool, const Vec3&, const Vec3&, float beta) { currentBeta = beta; refLocked = false; latestGravityProjectionUsable = false; }
 void Orientation::changeBeta(float beta) { currentBeta = beta; }
 float Orientation::getBeta() { return currentBeta; }
@@ -67,6 +69,67 @@ static bool contains(const std::string& type, const std::string& data) {
     if (m.body.substr(prefix.size()) == data) return true;
   }
   return false;
+}
+static void runWithPedalsReady(uint32_t milliseconds) {
+  const uint32_t start = millis();
+  while (uint32_t(millis() - start) < milliseconds) {
+    loop();
+    require(protocol.state() == rgp::State::Ready, "pedal movement must not interrupt READY");
+  }
+}
+static void waitForPedalLowProbe(size_t channel) {
+  const uint32_t start = millis();
+  while (pedalAdcState != PedalAdcState::ProbeLowSettling || nextPedalProbeChannel != channel) {
+    require(uint32_t(millis() - start) < 1000, "pedal probe is scheduled within one second");
+    runWithPedalsReady(1);
+  }
+}
+static void rapidPedalScenario(size_t channel) {
+  const float original = mockPedalVolts[channel];
+  mockPedalVolts[channel] = .3f;
+  runWithPedalsReady(400);
+  Serial.output.clear();
+  // Move after the HIGH measurement, before the LOW measurement: the old
+  // absolute-difference test reported a disconnected pedal in either direction.
+  for (int repeat = 0; repeat < 3; ++repeat) {
+    waitForPedalLowProbe(channel);
+    mockPedalVolts[channel] = 3.0f;
+    runWithPedalsReady(80);
+    waitForPedalLowProbe(channel);
+    mockPedalVolts[channel] = .3f;
+    runWithPedalsReady(80);
+  }
+  require(output("ERR").empty() && !output("TEL").empty(),
+          "rapid presses and releases preserve telemetry without pedal errors");
+  mockPedalVolts[channel] = original;
+  runWithPedalsReady(400);
+}
+static void isolatedPedalProbeScenario(size_t channel) {
+  const float original = mockPedalVolts[channel];
+  mockPedalVolts[channel] = 3.0f;
+  runWithPedalsReady(400);
+  Serial.output.clear();
+  for (int repeat = 0; repeat < 2; ++repeat) {
+    waitForPedalLowProbe(channel);
+    mockPedalVolts[channel] = .3f;
+    const uint32_t start = millis();
+    while (pedalAdcState != PedalAdcState::ProbeConfirmHighSettling) {
+      require(uint32_t(millis() - start) < 100, "suspect LOW sample starts HIGH confirmation");
+      runWithPedalsReady(1);
+    }
+    // Even a quick release/press that mimics one entire open-circuit probe
+    // must not stop operation; a healthy probe clears the suspicion.
+    mockPedalVolts[channel] = 3.0f;
+    runWithPedalsReady(80);
+    require(pedalOpenChecks[channel] == 1, "one suspect probe is retained for confirmation");
+    waitForPedalLowProbe(channel);
+    runWithPedalsReady(80);
+    require(pedalOpenChecks[channel] == 0, "healthy probe resets consecutive failure count");
+  }
+  require(output("ERR").empty() && !output("TEL").empty(),
+          "isolated suspect probes do not produce errors or stop telemetry");
+  mockPedalVolts[channel] = original;
+  runWithPedalsReady(400);
 }
 static void singleHandleScenario(size_t player) {
   const size_t absent = 1 - player;
@@ -137,6 +200,61 @@ int main(int argc, char** argv) {
       std::cout << "PASS: no-IMU firmware simulation, " << assertions << " assertions.\n";
       return 0;
     }
+    if (mode == "no-ads") {
+      mockDevices[0x68] = mockDevices[0x69] = true;
+      setup(); run(6000);
+      require(protocol.state() == rgp::State::WaitAngle && !device.status().ads &&
+              !contains("EVT", "I2C_LOST"), "missing optional ADS does not block calibration");
+      require(contains("EVT", "PEDAL_DISCONNECTED,P1_ACCEL") &&
+              contains("EVT", "PEDAL_DISCONNECTED,P2_ACCEL"), "missing ADS reports both pedals unavailable");
+      command(0, "OPEN_SESSION,0123456789ABCDEF"); command(1, "CALIBRATE,GYRO"); run(16000);
+      require(protocol.state() == rgp::State::Ready && !device.status().ads,
+              "both IMUs can calibrate and reach READY without ADS");
+      Serial.output.clear(); run(1000);
+      const auto tel = output("TEL");
+      require(tel.size() == 100 && tel.back().fields[4] == "0.000" && tel.back().fields[7] == "0.000" &&
+              output("EVT").empty() && output("ERR").empty(), "absent ADS sends 100 Hz with neutral pedals and quiet retries");
+      command(2, "GET_STATUS");
+      require(contains("ACK", "2,GET_STATUS,OK,READY,0,1,1,1"), "READY still reports ADS_OK=0");
+      mockDevices[0x48] = true; run(2000);
+      require(device.status().ads && contains("EVT", "PEDAL_CONNECTED,P1_ACCEL") &&
+              contains("EVT", "PEDAL_CONNECTED,P2_ACCEL"), "ADS hot plug restores confirmed pedals");
+      Serial.output.clear(); mockDevices[0x48] = false; run(1000);
+      require(protocol.state() == rgp::State::Ready && !device.status().ads && !output("TEL").empty() &&
+              contains("EVT", "PEDAL_DISCONNECTED,P1_ACCEL"), "ADS loss keeps IMU TEL running");
+      require(output("TEL").back().fields[4] == "0.000" && output("TEL").back().fields[7] == "0.000",
+              "ADS loss never forwards stale pedal values");
+      std::cout << "PASS: no-ADS firmware simulation, " << assertions << " assertions.\n";
+      return 0;
+    }
+    if (mode == "pedal-open") {
+      mockDevices[0x48] = mockDevices[0x68] = mockDevices[0x69] = true;
+      mockPedals[0] = false;
+      setup();
+      const uint32_t start = millis();
+      while (pedalOpenChecks[0] == 0) {
+        require(uint32_t(millis() - start) < 1000, "boot checks the open pedal");
+        loop();
+      }
+      require(!pedalConnected[0] && !pedalChecked[0] && !device.status().ads && output("TEL").empty(),
+              "first suspect boot probe cannot enable an unconfirmed pedal");
+      run(800);
+      require(protocol.state() == rgp::State::WaitAngle && pedalChecked[0] &&
+              !pedalConnected[0] && contains("EVT", "PEDAL_DISCONNECTED,P1_ACCEL"),
+              "persistent open pedal at boot is reported after confirmation");
+      command(0, "OPEN_SESSION,0123456789ABCDEF"); command(1, "CALIBRATE,GYRO"); run(16000);
+      Serial.output.clear(); run(100);
+      const auto tel = output("TEL");
+      require(protocol.state() == rgp::State::Ready && !device.status().ads && !tel.empty() &&
+              tel.back().fields[4] == "0.000" && tel.back().fields[7] == "0.250",
+              "confirmed open pedal is neutral while healthy pedal and IMUs keep running");
+      mockPedals[0] = true;
+      run(800);
+      require(pedalConnected[0] && pedalSampled[0] && device.status().ads && pedalOpenChecks[0] == 0,
+              "boot-disconnected pedal reconnects after healthy probe and normal sample");
+      std::cout << "PASS: open-pedal boot simulation, " << assertions << " assertions.\n";
+      return 0;
+    }
     mockDevices[0x48] = mockDevices[0x68] = mockDevices[0x69] = true;
     setup();
     auto boot = output();
@@ -169,19 +287,25 @@ int main(int argc, char** argv) {
     Serial.output.clear(); run(100);
     require(output("TEL").size() == 10, "rate increase resets old one-second deadline");
     command(103, "SET_RATE,TEL,50");
+    rapidPedalScenario(0);
+    rapidPedalScenario(1);
+    isolatedPedalProbeScenario(0);
+    isolatedPedalProbeScenario(1);
     mockPedals[1] = false;
     run(800);
-    require(protocol.state() == rgp::State::Recovering, "missing P2 accelerator stops both players");
-    require(contains("ERR", "ERROR,ADS1115,READ_FAILED,P2_ACCEL"), "named P2 accelerator failure");
+    require(protocol.state() == rgp::State::Ready && !device.status().ads, "missing P2 accelerator preserves IMU readiness");
+    require(contains("EVT", "PEDAL_DISCONNECTED,P2_ACCEL"), "named P2 accelerator disconnect");
     Serial.output.clear(); run(100);
-    require(output("TEL").empty(), "no substitute-zero or NaN TEL during pedal disconnect");
+    require(!output("TEL").empty() && output("TEL").back().fields[7] == "0.000" &&
+            output("TEL").back().fields[4] == "0.700", "missing P2 is neutral, P1 stays live");
     mockPedals[1] = true; run(800);
     require(protocol.state() == rgp::State::Ready, "pedal reconnect resumes READY");
     Serial.output.clear(); mockPedals[0] = false; run(800);
-    require(protocol.state() == rgp::State::Recovering &&
-            contains("ERR", "ERROR,ADS1115,READ_FAILED,P1_ACCEL"), "missing P1 accelerator is also detected");
+    require(protocol.state() == rgp::State::Ready &&
+            contains("EVT", "PEDAL_DISCONNECTED,P1_ACCEL"), "missing P1 accelerator is also detected");
     Serial.output.clear(); run(100);
-    require(output("TEL").empty(), "P1 accelerator disconnect also stops telemetry");
+    require(!output("TEL").empty() && output("TEL").back().fields[4] == "0.000" &&
+            output("TEL").back().fields[7] == "0.250", "missing P1 is neutral, P2 stays live");
     mockPedals[0] = true; run(800);
     require(protocol.state() == rgp::State::Ready, "P1 accelerator reconnect resumes READY");
     mockDevices[0x69] = false; Serial.output.clear(); run(20);
@@ -230,7 +354,8 @@ int main(int argc, char** argv) {
     mockDevices[0x69] = true; run(3500);
     require(protocol.state() == rgp::State::Ready, "recovery after calibration failure");
     mockConversionStuck = true; Serial.output.clear(); run(200);
-    require(protocol.state() == rgp::State::Recovering && !adsOnline, "stuck ADC timeout detected");
+    require(protocol.state() == rgp::State::Ready && !adsOnline && !device.status().ads,
+            "stuck ADC timeout detected without stopping IMU TEL");
     mockConversionStuck = false; run(2000);
     require(protocol.state() == rgp::State::Ready, "ADC timeout recovery");
     Serial.output.clear(); mockBusError = 4; command(8, "SCAN_I2C"); run(2);

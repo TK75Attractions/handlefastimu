@@ -268,7 +268,10 @@ static void regressionTests() {
       check(!r.protocol.telemetry(bad, 0), "invalid brake stops whole TEL");
     }
     r.device.current.ads = false;
-    check(!r.protocol.telemetry(in, 0), "missing sensor stops whole TEL");
+    check(r.protocol.telemetry(in, 0), "optional pedals do not stop TEL");
+    r.device.current.imu = false;
+    check(!r.protocol.telemetry(in, 0), "missing all IMUs stops TEL");
+    r.device.current.imu = true;
     r.device.current.ads = true;
     r.cmd(1, "SET_STREAM,TEL,0");
     check(!r.protocol.telemetry(in, 0), "TEL stream off");
