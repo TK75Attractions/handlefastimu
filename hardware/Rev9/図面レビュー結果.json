@@ -1,0 +1,11 @@
+{
+  "wire_count": 43,
+  "bare_count": 10,
+  "nets": 9,
+  "collinear_overlaps": 0,
+  "component_shared_holes": 0,
+  "power_rail_spacing_mm": 5.08,
+  "i2c_rail_spacing_mm": 7.62,
+  "mechanical_nominal_body_check": "pass",
+  "hardware_verified": false
+}

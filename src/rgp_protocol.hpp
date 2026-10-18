@@ -73,6 +73,7 @@ public:
   bool telemetry(const Inputs& inputs, uint32_t now);
   uint32_t telemetryPeriodUs() const { return 1000000U / telRate; }
   bool telemetryEnabled() const { return telStream; }
+  bool diagnosticsEnabled() const { return dbgStream; }
   float beta() const { return currentBeta; }
   bool busy() const { return !activeCommand.empty(); }
   void finishOperation() { activeCommand.clear(); }
@@ -92,6 +93,7 @@ private:
   uint32_t telRate = 100;
   float currentBeta = 0.2f;
   bool telStream = true;
+  bool dbgStream = false;
   std::string session;
   std::vector<Receipt> receipts;
   std::string activeCommand;

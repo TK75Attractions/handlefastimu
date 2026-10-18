@@ -128,8 +128,7 @@ static void suppliedVectors(const std::string& directory) {
       }
       if ((expected == "ESP_ACCEPT_OK" || expected == "ESP_ACCEPT_ACCEPTED") &&
           (context.find("MAG_SUPPORTED") != std::string::npos ||
-           context.find("SET_RATE_IMU_SUPPORTED") != std::string::npos ||
-           context.find("SET_STREAM_DBG_SUPPORTED") != std::string::npos)) {
+           context.find("SET_RATE_IMU_SUPPORTED") != std::string::npos)) {
         ++unsupportedContexts;
         continue;
       }
@@ -208,7 +207,11 @@ static void regressionTests() {
     r.cmd(5, "SET_RATE,IMU,0");
     check(r.messages("ACK").back().fields[5] == "INVALID_ARG", "validation before unsupported/busy/state");
     r.cmd(6, "SET_STREAM,DBG,1");
-    check(r.messages("ACK").back().fields[5] == "UNSUPPORTED", "optional DBG disabled");
+    check(r.messages("ACK").back().fields[5] == "OK" && r.protocol.diagnosticsEnabled(), "DBG can be enabled during calibration");
+    r.cmd(7, "GET_CONFIG");
+    check(r.messages("ACK").back().body.find("DBG_STREAM,1") != std::string::npos, "DBG enabled state is reported");
+    r.cmd(8, "SET_STREAM,DBG,0");
+    check(!r.protocol.diagnosticsEnabled() && r.protocol.telemetryEnabled(), "DBG disable is independent from TEL");
   }
   {
     Rig r; r.open(); r.ready();

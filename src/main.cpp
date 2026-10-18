@@ -1,10 +1,13 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <math.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <Adafruit_ADS1X15.h>
 #include "imu_manager.hpp"
 #include "orientation.hpp"
 #include "rgp_protocol.hpp"
+#include "pedal_filter.hpp"
 
 // All inputs share one bus; AD0 selects each player's IMU address.
 constexpr uint8_t I2C_SDA = 21;
@@ -64,6 +67,11 @@ struct PedalCalibration { float minimum; float maximum; };
 // Each channel has its own calibration. Replace these nominal endpoints with measured values.
 constexpr PedalCalibration PEDAL_CALIBRATION[] = {{0, 3.3f}, {0, 3.3f}};
 float pedals[PEDAL_COUNT] = {};
+PedalFilter pedalFilters[PEDAL_COUNT];
+int16_t pedalRaw[PEDAL_COUNT] = {};
+uint32_t pedalSamples[PEDAL_COUNT] = {};
+float pedalProbeDelta[PEDAL_COUNT] = {NAN, NAN};
+uint32_t nextDiagnosticsMs = 0;
 bool pedalConnected[PEDAL_COUNT] = {};
 bool pedalSampled[PEDAL_COUNT] = {};
 bool pedalChecked[PEDAL_COUNT] = {};
@@ -168,6 +176,7 @@ static void markAdsOffline() {
   pinMode(PEDAL_PROBE_PIN, INPUT);
   adsOnline = false;
   for (size_t i = 0; i < PEDAL_COUNT; ++i) {
+    pedalFilters[i].reset();
     pedalConnected[i] = false;
     pedalSampled[i] = false;
     pedalChecked[i] = false;
@@ -265,6 +274,7 @@ static void updatePedals() {
     ads.setGain(GAIN_ONE);
     ads.setDataRate(RATE_ADS1115_860SPS);
     for (size_t i = 0; i < PEDAL_COUNT; ++i) {
+      pedalFilters[i].reset();
       pedalConnected[i] = false;
       pedalSampled[i] = false;
       pedalChecked[i] = false;
@@ -282,8 +292,14 @@ static void updatePedals() {
     case PedalAdcState::NormalWaiting: {
       if (!readCompletedPedalConversion(raw)) return;
       const auto& c = PEDAL_CALIBRATION[normalPedalChannel];
+      pedalRaw[normalPedalChannel] = raw;
+      ++pedalSamples[normalPedalChannel];
+      float normalized = 0;
       pedalSampled[normalPedalChannel] = rgp::normalizePedal(ads.computeVolts(raw),
-        c.minimum, c.maximum, pedals[normalPedalChannel]);
+        c.minimum, c.maximum, normalized);
+      if (pedalSampled[normalPedalChannel])
+        pedals[normalPedalChannel] = pedalFilters[normalPedalChannel].update(normalized, micros());
+      else pedalFilters[normalPedalChannel].reset();
       if (!pedalSampled[normalPedalChannel] && !pedalReportedLost[normalPedalChannel]) {
         protocol.error(std::string("ERROR,ADS1115,READ_FAILED,") + PEDAL_NAMES[normalPedalChannel], millis());
         pedalReportedLost[normalPedalChannel] = true;
@@ -315,8 +331,9 @@ static void updatePedals() {
       if (!readCompletedPedalConversion(raw)) return;
       pinMode(PEDAL_PROBE_PIN, INPUT);
       const size_t i = nextPedalProbeChannel;
-      const bool connected = fabsf(ads.computeVolts(pedalProbeHighRaw) - ads.computeVolts(raw)) < PEDAL_OPEN_DELTA_VOLTS;
-      if (!connected || !pedalConnected[i]) pedalSampled[i] = false;
+      pedalProbeDelta[i] = fabsf(ads.computeVolts(pedalProbeHighRaw) - ads.computeVolts(raw));
+      const bool connected = pedalProbeDelta[i] < PEDAL_OPEN_DELTA_VOLTS;
+      if (!connected || !pedalConnected[i]) { pedalSampled[i] = false; pedalFilters[i].reset(); }
       pedalConnected[i] = connected;
       pedalChecked[i] = true;
       if (!connected && !pedalReportedLost[i]) {
@@ -539,6 +556,65 @@ static void outputLatestInputs() {
     {pedals[0], pedals[1]}, {0.0f, 0.0f}};
   protocol.telemetry(snapshot, millis());
 }
+// Register diagnostics use RGP DBG frames; never interleave legacy CSV/raw logs.
+static bool readRegisters(uint8_t address, uint8_t reg, uint8_t* data, uint8_t count) {
+  Wire.beginTransmission(address);
+  if (Wire.endTransmission(true) != 0) return false;
+  Wire.beginTransmission(address);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(address, count) != count) return false;
+  for (uint8_t i = 0; i < count; ++i) data[i] = Wire.read();
+  return true;
+}
+static void diagnostic(const char* subsystem, const char* format, ...) {
+  char text[256];
+  va_list args; va_start(args, format);
+  vsnprintf(text, sizeof(text), format, args); va_end(args);
+  const std::string value(text);
+  const char* hex = "0123456789ABCDEF";
+  // 56 bytes expand to at most 168 encoded bytes, below the RGP frame limit.
+  for (size_t offset = 0; offset < value.size(); offset += 56) {
+    std::string encoded;
+    for (size_t i = offset; i < value.size() && i < offset + 56; ++i) {
+      const unsigned char c = value[i];
+      if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+          (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_' || c == '~') encoded += c;
+      else { encoded += '%'; encoded += hex[c >> 4]; encoded += hex[c & 15]; }
+    }
+    protocol.send("DBG", std::string(subsystem) + "," + encoded, millis());
+  }
+}
+static void printDiagnostics() {
+  for (size_t i = 0; i < 2; ++i) {
+    auto& h = handles[i];
+    uint8_t who = 0, power = 0, data[14] = {};
+    const bool whoOk = readRegisters(h.address, 0x75, &who, 1);
+    const bool powerOk = readRegisters(h.address, 0x6B, &power, 1);
+    const bool rawOk = readRegisters(h.address, 0x3B, data, sizeof(data));
+    diagnostic("IMU", "P%u addr=%s WHO_AM_I=%s read=%u power=%u/%u", unsigned(i + 1),
+      addressText(h.address).c_str(), addressText(who).c_str(), whoOk, power, powerOk);
+    diagnostic("IMU", "P%u online=%u settling=%u angle=%.2f raw_read=%u", unsigned(i + 1),
+      h.online, h.settling, h.angleDeg, rawOk);
+    if (rawOk) {
+      int16_t v[7];
+      for (uint8_t j = 0; j < 7; ++j) v[j] = int16_t((uint16_t(data[2*j]) << 8) | data[2*j+1]);
+      diagnostic("IMU", "P%u raw=%d,%d,%d,%d,%d,%d,%d", unsigned(i + 1), v[0],v[1],v[2],v[3],v[4],v[5],v[6]);
+      diagnostic("IMU", "P%u accel_g=%.4f,%.4f,%.4f", unsigned(i + 1), h.accel.accelX,h.accel.accelY,h.accel.accelZ);
+      diagnostic("IMU", "P%u gyro_dps=%.3f,%.3f,%.3f", unsigned(i + 1), h.gyro.gyroX,h.gyro.gyroY,h.gyro.gyroZ);
+    }
+  }
+  uint8_t config[2] = {}, conversion[2] = {};
+  const bool configOk = readRegisters(ADS_ADDRESS, 0x01, config, 2);
+  const bool conversionOk = readRegisters(ADS_ADDRESS, 0x00, conversion, 2);
+  diagnostic("ADS1115", "config_read=%u config=%u raw_read=%u raw=%d", configOk,
+    unsigned((uint16_t(config[0]) << 8) | config[1]), conversionOk,
+    int16_t((uint16_t(conversion[0]) << 8) | conversion[1]));
+  for (size_t i = 0; i < PEDAL_COUNT; ++i)
+    diagnostic("ADS1115", "A%u samples=%lu raw=%d volts=%.4f delta=%.4f connected=%u", unsigned(i),
+      (unsigned long)pedalSamples[i], pedalRaw[i], ads.computeVolts(pedalRaw[i]), pedalProbeDelta[i], pedalConnected[i]);
+}
+
 void setup() {
   Serial.begin(115200);
   protocol.begin();
@@ -579,5 +655,9 @@ void loop() {
   }
   updateState();
   outputLatestInputs();
+  if (protocol.diagnosticsEnabled() && !scanJob.active && !calibration.active && due(millis(), nextDiagnosticsMs)) {
+    printDiagnostics();
+    nextDiagnosticsMs = millis() + 1000;
+  }
   delay(1);
 }

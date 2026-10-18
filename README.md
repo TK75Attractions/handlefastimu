@@ -99,8 +99,8 @@ CMD,4,0,CALIBRATE,GYRO
 | CALIBRATE | GYROまたはALL | ACCEPTEDの後、開始時に接続中のハンドルだけを順に非同期校正 |
 | SCAN_I2C | なし | ACCEPTEDの後、0x08〜0x77を昇順に非同期スキャン |
 
-IMU/DBGの任意診断ストリームとMAG校正は未実装です。該当する有効な要求にはUNSUPPORTED、不正な引数には先にINVALID_ARGを返します。
-GET_CONFIGのIMU_RATE=20、IMU_STREAM=0、DBG_STREAM=0は診断ストリームの既定値を表します。
+IMUの任意診断ストリームとMAG校正は未実装です。該当する有効な要求にはUNSUPPORTED、不正な引数には先にINVALID_ARGを返します。
+GET_CONFIGのIMU_RATE=20、IMU_STREAM=0、DBG_STREAM=0は診断ストリームの既定値を表します。DBG_STREAMはSET_STREAMで切り替えた実際の値を返します。
 GET_STATUSのIMU_OKは1台以上のIMUがオンラインなら1です。ANGLE_LOCKED・CALIBRATEDは接続中の全IMUを対象に判定し、IMUが0台なら両方0です。ADS_OKは引き続き両アクセルの有効性を含みます。
 OPEN_SESSION前の他CMDはNOT_READY。ANGLE_ZERO・SET_BETA・CALIBRATEはREADY/WAIT_ANGLEで受け付けます。
 校正とスキャンの競合はBUSYで実行中の要求を通知します。
@@ -133,10 +133,22 @@ PlatformIOにFastIMU 1.2.9とAdafruit ADS1X15を依存関係として宣言し�
 
 テストはC++11コンパイラーで実際の通信実装をコンパイルし、AddressSanitizer/UndefinedBehaviorSanitizer付きで実行します。
 `test/vectors` は添付RGPフォルダーの3ファイルを変更せず収録したものです。
-CRC vectors 19件とESP32受信動作59件を検証します。任意機能の実装を前提とする3件は対象外と明示します。
+CRC vectors 19件とESP32受信動作60件を検証します。任意機能の実装を前提とする2件は対象外と明示します。
 PC向け107件のうち有効フレームはコーデック往復を検証しますが、PC固有の不正TEL・UTF-8・stale処理を検証したとは扱いません。
 
 追加テストでは、再送記録の保持条件、セッション更新、原子的なANGLE_ZERO、TELの送信条件、通信設定、FATAL中の応答などを確認します。
 さらに実際のsetup/loopをハードウェア・角度推定の模擬実装で動かし、送信周期、2チャンネル割当、A2・A3が未接続でも動作すること、ブレーキ欄の0固定、両アクセルの切断・再接続、校正中の受信、スキャン、失敗時の通知を検証します。
 IMUは2台・P1のみ・P2のみ・0台の各構成で、校正・ANGLE_ZERO・TELの割当、最後の1台の切断、追加接続・再校正も検証します。
 実機への書き込み・電気的な接続検査・回転方向・実際の出力周期は、このホストテストでは確認できません。
+
+## ペダルのノイズ除去と診断
+
+各アクセルを独立した適応ローパスフィルターで平滑化します。静止中は約2 Hzでノイズを抑え、操作時には追従を速めます。切断・再接続や無効な測定時にはフィルターを初期化し、古い値を再利用しません。
+
+セッション開始後に `SET_STREAM,DBG,1` を送ると、約1秒間隔でCRC付きRGPの `DBG,SUBSYSTEM,TEXT` を送信します。`SET_STREAM,DBG,0` で停止します。IMUの識別値・電源レジスタ・生の7軸値・ドライバー出力と、ADS1115のレジスタ・各アクセルの測定回数・電圧・接続検査差分を確認できます。文章はパーセントエンコードされ、長い行は複数のフレームに分割します。校正中とI2Cスキャン中は診断を保留します。診断によるI2C通信と送信量の増加を避けるため、確認後は停止してください。
+
+旧filterブランチの `d` / `D` と4列CSVの代わりに、このRGPコマンドとDBGを利用してください。通常の2プレイヤーTEL、単独IMU運用、上下逆取付の角度基準、識別値によるドライバー選択は維持します。
+
+## 配線資料・過去の実機診断
+
+`hardware/Rev8`、`hardware/Rev9`、`hardware/Rev10` に図面、工程表、生成スクリプトを収録しています。現行の配線はこのREADME冒頭を優先してください。`diagnostics/2026-10-09-findings.md` と同日のログは旧CSVファームウェアで測定した履歴であり、現行ファームウェアの実測結果ではありません。
