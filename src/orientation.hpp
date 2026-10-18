@@ -10,7 +10,7 @@ public:
 
   // Initialize filter parameters and provide shaft geometry.
   // The fixed zero is the pose where zeroGravityDirectionSensor points along
-  // the gravity estimate; for this project that is sensor -X, which makes
+  // the gravity estimate; for this project's inverted mounting that is +X, making
   // sensor Y horizontal while sensor Z is the rotation axis.
   void begin(
   bool hasMagnetometer,

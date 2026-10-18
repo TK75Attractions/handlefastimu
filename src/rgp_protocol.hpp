@@ -51,7 +51,7 @@ public:
   virtual ~Device() = default;
   virtual void write(const std::string& wire) = 0;
   virtual Status status() const = 0;
-  // Must check both references before changing either handle.
+  // Must check all connected references before changing any handle.
   virtual bool zeroAngles() = 0;
   virtual void setBeta(float value) = 0;
   // These only schedule work; serial input must keep being serviced.

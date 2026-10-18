@@ -12,7 +12,7 @@ constexpr uint8_t I2C_SCL = 22;
 constexpr uint8_t HANDLE1_ADDRESS = 0x68;
 constexpr uint8_t HANDLE2_ADDRESS = 0x69;
 constexpr uint8_t ADS_ADDRESS = 0x48;
-// GPIO27 reaches A0 through A3 through four separate 100 kOhm resistors.
+// GPIO27 reaches A0 and A1 through two separate 100 kOhm resistors.
 // A low-impedance pedal holds its voltage; an open input follows the probe.
 constexpr uint8_t PEDAL_PROBE_PIN = 27;
 constexpr uint32_t PEDAL_PROBE_INTERVAL_MS = 100;
@@ -22,6 +22,9 @@ constexpr uint32_t FILTER_SETTLE_MS = 5000;
 constexpr uint32_t RECONNECT_SETTLE_MS = 1200;
 constexpr uint32_t RECONNECT_RETRY_MS = 1000;
 constexpr float RAD_TO_DEG_F = 57.2957795f;
+// Both IMUs are mounted 180 degrees around Z from the original orientation.
+// Move the gravity zero from -X to +X without changing the rotation direction.
+const Vec3 HANDLE_ZERO_GRAVITY(1, 0, 0);
 
 Adafruit_ADS1115 ads;
 
@@ -48,14 +51,18 @@ struct HandleInput {
 };
 
 HandleInput handles[] = {HandleInput(HANDLE1_ADDRESS), HandleInput(HANDLE2_ADDRESS)};
+static bool anyHandleOnline() {
+  for (const auto& h : handles) if (h.online) return true;
+  return false;
+}
 bool adsOnline = false;
 uint32_t adsRetryAtMs = 0;
-// Preserve the existing accelerator wiring; add independent brake inputs.
-constexpr size_t PEDAL_COUNT = 4;
-constexpr const char* PEDAL_NAMES[] = {"P1_ACCEL", "P2_ACCEL", "P1_BRAKE", "P2_BRAKE"};
+// One accelerator per player. A2/A3 are unused and never sampled or probed.
+constexpr size_t PEDAL_COUNT = 2;
+constexpr const char* PEDAL_NAMES[] = {"P1_ACCEL", "P2_ACCEL"};
 struct PedalCalibration { float minimum; float maximum; };
 // Each channel has its own calibration. Replace these nominal endpoints with measured values.
-constexpr PedalCalibration PEDAL_CALIBRATION[] = {{0, 3.3f}, {0, 3.3f}, {0, 3.3f}, {0, 3.3f}};
+constexpr PedalCalibration PEDAL_CALIBRATION[] = {{0, 3.3f}, {0, 3.3f}};
 float pedals[PEDAL_COUNT] = {};
 bool pedalConnected[PEDAL_COUNT] = {};
 bool pedalSampled[PEDAL_COUNT] = {};
@@ -93,6 +100,7 @@ rgp::Protocol protocol(device);
 
 struct CalibrationJob {
   bool active = false;
+  bool targets[2] = {};
   uint32_t origin = 0;
   std::string target;
   size_t handle = 0;
@@ -146,8 +154,7 @@ static bool due(uint32_t now, uint32_t deadline) {
 }
 static uint16_t pedalMux(uint8_t channel) {
   static const uint16_t mux[] = {ADS1X15_REG_CONFIG_MUX_SINGLE_0,
-    ADS1X15_REG_CONFIG_MUX_SINGLE_1, ADS1X15_REG_CONFIG_MUX_SINGLE_2,
-    ADS1X15_REG_CONFIG_MUX_SINGLE_3};
+    ADS1X15_REG_CONFIG_MUX_SINGLE_1};
   return mux[channel];
 }
 static bool validPedalCalibration() {
@@ -168,6 +175,7 @@ static void markAdsOffline() {
   adsRetryAtMs = millis() + RECONNECT_RETRY_MS;
 }
 static void markHandleOffline(HandleInput& h) {
+  if (h.online) protocol.event("IMU_LOST," + addressText(h.address), millis());
   if (h.settling) h.orientation.changeBeta(h.restoreBeta);
   h.online = false;
   h.settling = false;
@@ -209,7 +217,7 @@ static bool initializeHandle(HandleInput& h, size_t index) {
   protocol.send("SYS", "DEVICE,IMU," + addressText(h.address) + "," + addressText(h.imu.getWhoAmI()), millis());
   protocol.event("IMU_FOUND", millis());
   if (!h.configured) {
-    h.orientation.begin(h.hasMag, Vec3(0, 0, 1), Vec3(-1, 0, 0), protocol.beta());
+    h.orientation.begin(h.hasMag, Vec3(0, 0, 1), HANDLE_ZERO_GRAVITY, protocol.beta());
     h.configured = true;
     startSettling(h, FILTER_SETTLE_MS);
   } else {
@@ -329,17 +337,22 @@ rgp::Status FirmwareDevice::status() const {
   rgp::Status s;
   s.ads = adsOnline;
   for (size_t i = 0; i < PEDAL_COUNT; ++i) s.ads = s.ads && pedalConnected[i] && pedalSampled[i];
-  s.imu = handles[0].online && handles[1].online;
+  s.imu = anyHandleOnline();
   s.angle = s.imu;
-  for (const auto& h : handles)
+  s.calibrated = s.imu && validPedalCalibration() && !calibration.active;
+  for (const auto& h : handles) {
+    if (!h.online) continue;
     s.angle = s.angle && !h.settling && h.refLocked && isfinite(h.angleDeg) && fabsf(h.angleDeg) <= 3600;
-  s.calibrated = validPedalCalibration() && handles[0].calib.valid && handles[1].calib.valid && !calibration.active;
+    s.calibrated = s.calibrated && h.calib.valid;
+  }
   return s;
 }
 bool FirmwareDevice::zeroAngles() {
+  if (!anyHandleOnline()) return false;
   for (auto& h : handles)
-    if (!h.online || h.settling || !h.orientation.hasAbsoluteShaftReference()) return false;
+    if (h.online && (h.settling || !h.orientation.hasAbsoluteShaftReference())) return false;
   for (auto& h : handles) {
+    if (!h.online) continue;
     h.orientation.restartAngleTracking();
     h.refLocked = true;
     h.angleDeg = -h.orientation.shaftAngleRad() * RAD_TO_DEG_F;
@@ -356,6 +369,10 @@ void FirmwareDevice::setBeta(float value) {
 void FirmwareDevice::calibrate(uint32_t origin, const std::string& target) {
   calibration = CalibrationJob();
   calibration.active = true;
+  // Freeze the target set: an absent slot is optional, but losing a target
+  // during calibration must fail rather than silently claiming success.
+  for (size_t i = 0; i < 2; ++i) calibration.targets[i] = handles[i].online;
+  while (calibration.handle < 2 && !calibration.targets[calibration.handle]) ++calibration.handle;
   calibration.origin = origin;
   calibration.target = target;
   calibration.nextSampleMs = millis() + 3000;
@@ -374,11 +391,13 @@ static void failCalibration() {
   protocol.error("ERROR,CALIBRATION,READ_FAILED,GYRO,REQ," + integer(calibration.origin), millis());
   calibration.active = false;
   protocol.finishOperation();
-  // The connection monitor emits I2C_LOST before STATE,RECOVERING.
+  // The connection monitor chooses the state from the remaining online inputs.
 }
 static void updateCalibration() {
   if (!calibration.active) return;
-  if (!handles[0].online || !handles[1].online) { failCalibration(); return; }
+  if (calibration.handle >= 2) { failCalibration(); return; }
+  for (size_t i = 0; i < 2; ++i)
+    if (calibration.targets[i] && !handles[i].online) { failCalibration(); return; }
   if (!due(millis(), calibration.nextSampleMs)) return;
   auto& h = handles[calibration.handle];
   if (!calibration.prepared) {
@@ -406,17 +425,20 @@ static void updateCalibration() {
   for (size_t i = 0; i < 3; ++i) result.gyroBias[i] = calibration.sum[i] / calibration.samples;
   if (h.imu.initImu(result) != 0) { markHandleOffline(h); failCalibration(); return; }
   h.calib = result;
-  h.orientation.begin(false, Vec3(0, 0, 1), Vec3(-1, 0, 0), protocol.beta());
+  h.orientation.begin(false, Vec3(0, 0, 1), HANDLE_ZERO_GRAVITY, protocol.beta());
   h.refLocked = false;
   startSettling(h, FILTER_SETTLE_MS);
-  if (++calibration.handle < 2) {
+  ++calibration.handle;
+  while (calibration.handle < 2 && !calibration.targets[calibration.handle]) ++calibration.handle;
+  if (calibration.handle < 2) {
     calibration.samples = 0;
     for (auto& sum : calibration.sum) sum = 0;
     calibration.prepared = false;
     calibration.nextSampleMs = millis() + 3000;
     return;
   }
-  for (auto& handle : handles) handle.settleStartedMs = millis();
+  for (size_t i = 0; i < 2; ++i)
+    if (calibration.targets[i]) handles[i].settleStartedMs = millis();
   protocol.event("CAL_GYRO_DONE," + integer(calibration.origin), millis());
   protocol.event("CAL_DONE," + integer(calibration.origin) + "," + calibration.target, millis());
   calibration.active = false;
@@ -470,7 +492,7 @@ static void updateScan() {
 static void updateState() {
   if (protocol.state() == rgp::State::Fatal || scanJob.active) return;
   const uint32_t now = millis();
-  const bool busOnline = adsOnline && handles[0].online && handles[1].online;
+  const bool busOnline = adsOnline && anyHandleOnline();
   if (!busOnline && !busFailureReported) {
     protocol.error("ERROR,I2C,CONNECTION_LOST", now);
     protocol.event("I2C_LOST", now);
@@ -510,8 +532,11 @@ static void outputLatestInputs() {
   if (!due(nowUs, nextOutputUs)) return;
   nextOutputUs += period;
   if (due(nowUs, nextOutputUs)) nextOutputUs = nowUs + period;
-  const rgp::Inputs snapshot = {{handles[0].angleDeg, handles[1].angleDeg},
-    {pedals[0], pedals[1]}, {pedals[2], pedals[3]}};
+  // Preserve player/address mapping and the six RGP/1 fields. An absent handle
+  // has a neutral value; never forward its last angle or mirror the other IMU.
+  const rgp::Inputs snapshot = {{handles[0].online ? handles[0].angleDeg : 0.0f,
+    handles[1].online ? handles[1].angleDeg : 0.0f},
+    {pedals[0], pedals[1]}, {0.0f, 0.0f}};
   protocol.telemetry(snapshot, millis());
 }
 void setup() {
@@ -526,7 +551,8 @@ void setup() {
     // Gyro calibration remains explicit. Do not claim valid calibration before measurement.
     if (!initializeHandle(handles[i], i)) {
       handles[i].retryAtMs = millis() + RECONNECT_RETRY_MS;
-      protocol.error("ERROR,IMU,INIT_FAILED", millis());
+      // A missing address is an optional player slot, not an init failure.
+      if (probe(Wire, handles[i].address)) protocol.error("ERROR,IMU,INIT_FAILED", millis());
     }
     serviceSerial();
   }

@@ -5,7 +5,7 @@
 uint64_t mockTimeUs = 0;
 int mockPinMode = INPUT, mockPinLevel = LOW, mockBusError = 0;
 bool mockDevices[128] = {};
-bool mockPedals[4] = {true, true, true, true};
+bool mockPedals[4] = {true, true, false, false};
 bool mockConversionStuck = false;
 float mockPedalVolts[4] = {2.31f, .825f, .99f, 2.64f};
 MockSerial Serial;
@@ -68,8 +68,75 @@ static bool contains(const std::string& type, const std::string& data) {
   }
   return false;
 }
-int main() {
+static void singleHandleScenario(size_t player) {
+  const size_t absent = 1 - player;
+  mockDevices[0x48] = mockDevices[handles[player].address] = true;
+  setup(); run(5100);
+  require(protocol.state() == rgp::State::WaitAngle && device.status().imu &&
+          device.status().angle && !device.status().calibrated, "one IMU reaches WAIT_ANGLE without inventing calibration");
+  require(!contains("ERR", "ERROR,IMU,INIT_FAILED") && !contains("EVT", "I2C_LOST"),
+          "absent optional IMU does not report an initialization or bus failure");
+  command(0, "OPEN_SESSION,0123456789ABCDEF");
+  command(1, "CALIBRATE,GYRO"); run(11000);
+  require(contains("ACK", "1,CALIBRATE,ACCEPTED,GYRO") && contains("EVT", "CAL_DONE,1,GYRO"),
+          "single online IMU calibration is accepted and completes");
+  require(protocol.state() == rgp::State::Ready && handles[player].calib.valid &&
+          !handles[absent].calib.valid, "single calibrated IMU reaches READY; absent IMU stays uncalibrated");
+  handles[player].angleDeg = 37.5f;
+  handles[absent].angleDeg = 123.0f;
+  Serial.output.clear(); delay(10); outputLatestInputs();
+  auto tel = output("TEL");
+  require(tel.size() == 1 && tel[0].fields[3 + player * 3] == "37.50" &&
+          tel[0].fields[3 + absent * 3] == "0.00", "TEL preserves player mapping and clears absent handle's stale angle");
+  require(tel[0].fields[4] == "0.700" && tel[0].fields[7] == "0.250" &&
+          tel[0].fields[5] == "0.000" && tel[0].fields[8] == "0.000", "single IMU retains two pedals and neutral brakes");
+  command(2, "ANGLE_ZERO");
+  require(contains("ACK", "2,ANGLE_ZERO,OK") && handles[player].angleDeg == 0 &&
+          handles[absent].angleDeg == 123, "ANGLE_ZERO affects only online handles");
+  Serial.output.clear(); command(3, "SCAN_I2C"); run(112);
+  require(contains("EVT", "I2C_SCAN_END,3,2"), "scan supports ADS plus a single IMU");
+  Serial.output.clear(); run(100);
+  require(protocol.state() == rgp::State::Ready && !output("TEL").empty(), "single IMU telemetry resumes after scan");
+  mockDevices[handles[player].address] = false; Serial.output.clear(); run(20);
+  require(protocol.state() == rgp::State::Recovering && !device.status().imu &&
+          !device.status().angle && !device.status().calibrated, "losing the only IMU invalidates all IMU status flags");
+  require(contains("EVT", "IMU_LOST," + addressText(handles[player].address)) && contains("EVT", "I2C_LOST"),
+          "last IMU disconnect names its address and reports loss");
+  require(!device.zeroAngles(), "ANGLE_ZERO fails when no IMU exists");
+  Serial.output.clear(); run(1200);
+  require(output("TEL").empty(), "zero IMUs never emit TEL");
+  mockDevices[handles[player].address] = true; run(2500);
+  require(protocol.state() == rgp::State::Ready, "sole calibrated IMU reconnect resumes operation");
+  mockDevices[handles[absent].address] = true; run(6500);
+  require(protocol.state() == rgp::State::WaitAngle && !device.status().calibrated,
+          "adding an uncalibrated second IMU requires calibration");
+  command(4, "CALIBRATE,GYRO"); run(16000);
+  require(protocol.state() == rgp::State::Ready && handles[0].calib.valid && handles[1].calib.valid,
+          "both IMUs can be calibrated after hot plug");
+  Serial.output.clear(); command(5, "CALIBRATE,GYRO"); run(3500);
+  mockDevices[handles[absent].address] = false; run(10);
+  require(!calibration.active && contains("ERR", "ERROR,CALIBRATION,READ_FAILED,GYRO,REQ,5") &&
+          !contains("EVT", "CAL_DONE,5,GYRO"), "losing a calibration target fails even if another IMU remains");
+}
+int main(int argc, char** argv) {
   try {
+    const std::string mode = argc > 1 ? argv[1] : "both";
+    if (mode == "p1" || mode == "p2") {
+      singleHandleScenario(mode == "p1" ? 0 : 1);
+      std::cout << "PASS: " << mode << "-only firmware simulation, " << assertions << " assertions.\n";
+      return 0;
+    }
+    if (mode == "none") {
+      mockDevices[0x48] = true; setup(); run(6000);
+      require(protocol.state() == rgp::State::Recovering && !device.status().imu &&
+              !device.status().angle && !device.status().calibrated && output("TEL").empty(),
+              "boot without any IMU cannot reach READY or send telemetry");
+      command(0, "OPEN_SESSION,0123456789ABCDEF"); command(1, "CALIBRATE,GYRO");
+      require(contains("ACK", "1,CALIBRATE,NOT_READY,RECOVERING") && !calibration.active,
+              "calibration is rejected with zero IMUs");
+      std::cout << "PASS: no-IMU firmware simulation, " << assertions << " assertions.\n";
+      return 0;
+    }
     mockDevices[0x48] = mockDevices[0x68] = mockDevices[0x69] = true;
     setup();
     auto boot = output();
@@ -84,10 +151,12 @@ int main() {
     command(0, "OPEN_SESSION,0123456789ABCDEF");
     command(100, "CALIBRATE,GYRO");
     run(16000);
-    require(protocol.state() == rgp::State::Ready, "all six calibrated application inputs reach READY");
+    require(protocol.state() == rgp::State::Ready, "two accelerators and both calibrated handles reach READY with A2/A3 disconnected");
     auto tel = output("TEL");
-    require(!tel.empty() && tel.back().fields[4] == "0.700" && tel.back().fields[5] == "0.300" &&
-            tel.back().fields[7] == "0.250" && tel.back().fields[8] == "0.800", "ADS A0/A1 accelerators and A2/A3 independent brakes");
+    require(!tel.empty() && tel.back().fields[4] == "0.700" && tel.back().fields[5] == "0.000" &&
+            tel.back().fields[7] == "0.250" && tel.back().fields[8] == "0.000", "ADS A0/A1 accelerators and fixed-zero RGP brake fields");
+    require(ads.conversionStarts[0] > 0 && ads.conversionStarts[1] > 0 &&
+            ads.conversionStarts[2] == 0 && ads.conversionStarts[3] == 0, "only A0/A1 are sampled and probed");
     Serial.output.clear(); run(1000);
     require(output("TEL").size() == 100, "default 100 Hz without bursts");
     command(0, "OPEN_SESSION,0123456789ABCDEF");
@@ -100,21 +169,30 @@ int main() {
     Serial.output.clear(); run(100);
     require(output("TEL").size() == 10, "rate increase resets old one-second deadline");
     command(103, "SET_RATE,TEL,50");
-    mockPedals[3] = false;
+    mockPedals[1] = false;
     run(800);
-    require(protocol.state() == rgp::State::Recovering, "missing P2 brake stops both players");
-    require(contains("ERR", "ERROR,ADS1115,READ_FAILED,P2_BRAKE"), "named pedal failure");
+    require(protocol.state() == rgp::State::Recovering, "missing P2 accelerator stops both players");
+    require(contains("ERR", "ERROR,ADS1115,READ_FAILED,P2_ACCEL"), "named P2 accelerator failure");
     Serial.output.clear(); run(100);
     require(output("TEL").empty(), "no substitute-zero or NaN TEL during pedal disconnect");
-    mockPedals[3] = true; run(800);
+    mockPedals[1] = true; run(800);
     require(protocol.state() == rgp::State::Ready, "pedal reconnect resumes READY");
+    Serial.output.clear(); mockPedals[0] = false; run(800);
+    require(protocol.state() == rgp::State::Recovering &&
+            contains("ERR", "ERROR,ADS1115,READ_FAILED,P1_ACCEL"), "missing P1 accelerator is also detected");
+    Serial.output.clear(); run(100);
+    require(output("TEL").empty(), "P1 accelerator disconnect also stops telemetry");
+    mockPedals[0] = true; run(800);
+    require(protocol.state() == rgp::State::Ready, "P1 accelerator reconnect resumes READY");
     mockDevices[0x69] = false; Serial.output.clear(); run(20);
-    require(protocol.state() == rgp::State::Recovering, "IMU disconnect enters RECOVERING");
-    require(contains("EVT", "I2C_LOST") && contains("ERR", "ERROR,I2C,CONNECTION_LOST"), "connection loss notifications");
+    require(protocol.state() == rgp::State::Ready, "remaining calibrated IMU continues operating after the other disconnects");
+    require(contains("EVT", "IMU_LOST,0x69") && !contains("EVT", "I2C_LOST"), "optional IMU loss notification without whole-bus loss");
     Serial.output.clear(); run(1200);
-    require(output("TEL").empty() && output("ERR").empty(), "retry is quiet and TEL stays off");
+    auto singleTel = output("TEL");
+    require(!singleTel.empty() && singleTel.back().fields[6] == "0.00" && output("ERR").empty(),
+            "retry is quiet and absent player's handle is neutral");
     mockDevices[0x69] = true; run(2500);
-    require(protocol.state() == rgp::State::Ready && contains("EVT", "I2C_RESTORED"), "IMU recovers at its own address");
+    require(protocol.state() == rgp::State::Ready && handles[1].online, "IMU recovers at its own address");
     Serial.output.clear();
     handles[1].angleDeg = 3600.01f; updateState(); outputLatestInputs();
     require(protocol.state() == rgp::State::WaitAngle && contains("EVT", "ANGLE_UNLOCKED"), "out-of-range angle invalidates reference");
@@ -159,6 +237,8 @@ int main() {
     require(contains("ERR", "ERROR,I2C,READ_FAILED,I2C_SCAN,REQ,8") && !contains("EVT", "I2C_SCAN_END,8,0"), "failed scan has REQ, no end event");
     mockBusError = 0; run(3000);
     require(protocol.state() == rgp::State::Ready, "bus error recovery");
+    require(ads.conversionStarts[2] == 0 && ads.conversionStarts[3] == 0,
+            "unused A2/A3 stay unsampled through scans, calibration and recovery");
     protocol.setState(rgp::State::Fatal, millis()); Serial.output.clear(); command(9, "GET_STATUS");
     require(contains("ACK", "9,GET_STATUS,OK,FATAL,1,1,1,1") && output("TEL").empty(), "FATAL status remains accessible");
     std::cout << "PASS: firmware simulation, " << assertions << " assertions (hardware/filter doubles).\n";

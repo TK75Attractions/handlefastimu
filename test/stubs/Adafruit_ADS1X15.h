@@ -9,6 +9,7 @@ constexpr int GAIN_ONE = 1, RATE_ADS1115_860SPS = 860;
 extern bool mockPedals[4], mockConversionStuck;
 extern float mockPedalVolts[4];
 struct Adafruit_ADS1115 {
+  uint32_t conversionStarts[4] = {};
   uint16_t channel = 0;
   int16_t conversion = 0;
   uint32_t started = 0;
@@ -17,6 +18,7 @@ struct Adafruit_ADS1115 {
   void setDataRate(int) {}
   void startADCReading(uint16_t mux, bool) {
     channel = mux;
+    ++conversionStarts[channel];
     float volts = mockPedals[channel] ? mockPedalVolts[channel] :
       (mockPinMode == OUTPUT ? (mockPinLevel == HIGH ? 3.3f : 0) : .6f);
     conversion = int16_t(std::round(volts * 8000));
