@@ -102,6 +102,7 @@ public:
   void setBeta(float value) override;
   void calibrate(uint32_t origin, const std::string& target) override;
   void scan(uint32_t origin) override;
+  void reportInputDevices(uint32_t now) override;
 };
 FirmwareDevice device;
 rgp::Protocol protocol(device);
@@ -350,14 +351,22 @@ static void updatePedals() {
   }
 }
 
+void FirmwareDevice::reportInputDevices(uint32_t now) {
+  for (auto& h : handles) {
+    if (h.online) protocol.send("SYS", "DEVICE,IMU," + addressText(h.address) + "," + addressText(h.imu.getWhoAmI()), now);
+    else protocol.event("IMU_LOST," + addressText(h.address), now);
+  }
+}
 rgp::Status FirmwareDevice::status() const {
   rgp::Status s;
   s.ads = adsOnline;
   for (size_t i = 0; i < PEDAL_COUNT; ++i) s.ads = s.ads && pedalConnected[i] && pedalSampled[i];
-  s.imu = anyHandleOnline();
+  s.imu = protocol.p1SteeringOnly() ? handles[0].online : anyHandleOnline();
   s.angle = s.imu;
   s.calibrated = s.imu && validPedalCalibration() && !calibration.active;
-  for (const auto& h : handles) {
+  for (size_t i = 0; i < 2; ++i) {
+    if (protocol.p1SteeringOnly() && i != 0) continue;
+    const auto& h = handles[i];
     if (!h.online) continue;
     s.angle = s.angle && !h.settling && h.refLocked && isfinite(h.angleDeg) && fabsf(h.angleDeg) <= 3600;
     s.calibrated = s.calibrated && h.calib.valid;
@@ -365,10 +374,12 @@ rgp::Status FirmwareDevice::status() const {
   return s;
 }
 bool FirmwareDevice::zeroAngles() {
-  if (!anyHandleOnline()) return false;
-  for (auto& h : handles)
-    if (h.online && (h.settling || !h.orientation.hasAbsoluteShaftReference())) return false;
-  for (auto& h : handles) {
+  if (protocol.p1SteeringOnly() ? !handles[0].online : !anyHandleOnline()) return false;
+  for (size_t i = 0; i < 2; ++i)
+    if ((!protocol.p1SteeringOnly() || i == 0) && handles[i].online && (handles[i].settling || !handles[i].orientation.hasAbsoluteShaftReference())) return false;
+  for (size_t i = 0; i < 2; ++i) {
+    if (protocol.p1SteeringOnly() && i != 0) continue;
+    auto& h = handles[i];
     if (!h.online) continue;
     h.orientation.restartAngleTracking();
     h.refLocked = true;
@@ -388,7 +399,7 @@ void FirmwareDevice::calibrate(uint32_t origin, const std::string& target) {
   calibration.active = true;
   // Freeze the target set: an absent slot is optional, but losing a target
   // during calibration must fail rather than silently claiming success.
-  for (size_t i = 0; i < 2; ++i) calibration.targets[i] = handles[i].online;
+  for (size_t i = 0; i < 2; ++i) calibration.targets[i] = handles[i].online && (!protocol.p1SteeringOnly() || i == 0);
   while (calibration.handle < 2 && !calibration.targets[calibration.handle]) ++calibration.handle;
   calibration.origin = origin;
   calibration.target = target;
@@ -509,7 +520,7 @@ static void updateScan() {
 static void updateState() {
   if (protocol.state() == rgp::State::Fatal || scanJob.active) return;
   const uint32_t now = millis();
-  const bool busOnline = adsOnline && anyHandleOnline();
+  const bool busOnline = protocol.p1SteeringOnly() ? handles[0].online : adsOnline && anyHandleOnline();
   if (!busOnline && !busFailureReported) {
     protocol.error("ERROR,I2C,CONNECTION_LOST", now);
     protocol.event("I2C_LOST", now);
@@ -530,13 +541,13 @@ static void updateState() {
   bool knownDisconnected = false;
   for (size_t i = 0; i < PEDAL_COUNT; ++i)
     knownDisconnected = knownDisconnected || (pedalChecked[i] && (!pedalConnected[i] || !pedalSampled[i]));
-  if (!busOnline || knownDisconnected) {
+  if (!busOnline || (knownDisconnected && !protocol.p1SteeringOnly())) {
     connectionWasLost = true;
     protocol.setState(rgp::State::Recovering, now);
-  } else if (s.ads && s.imu && s.angle && s.calibrated) {
+  } else if (protocol.inputsReady(s)) {
     protocol.setState(rgp::State::Ready, now);
     connectionWasLost = false;
-  } else if (!connectionWasLost || s.ads) protocol.setState(rgp::State::WaitAngle, now);
+  } else if (!connectionWasLost || s.ads || protocol.p1SteeringOnly()) protocol.setState(rgp::State::WaitAngle, now);
 }
 static void outputLatestInputs() {
   const uint32_t nowUs = micros();
@@ -552,8 +563,8 @@ static void outputLatestInputs() {
   // Preserve player/address mapping and the six RGP/1 fields. An absent handle
   // has a neutral value; never forward its last angle or mirror the other IMU.
   const rgp::Inputs snapshot = {{handles[0].online ? handles[0].angleDeg : 0.0f,
-    handles[1].online ? handles[1].angleDeg : 0.0f},
-    {pedals[0], pedals[1]}, {0.0f, 0.0f}};
+    !protocol.p1SteeringOnly() && handles[1].online ? handles[1].angleDeg : 0.0f},
+    {protocol.p1SteeringOnly() ? 0.0f : pedals[0], protocol.p1SteeringOnly() ? 0.0f : pedals[1]}, {0.0f, 0.0f}};
   protocol.telemetry(snapshot, millis());
 }
 // Register diagnostics use RGP DBG frames; never interleave legacy CSV/raw logs.

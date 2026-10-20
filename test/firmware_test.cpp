@@ -121,6 +121,35 @@ static void singleHandleScenario(size_t player) {
 int main(int argc, char** argv) {
   try {
     const std::string mode = argc > 1 ? argv[1] : "both";
+    if (mode == "steering-only") {
+      mockDevices[0x68] = true; mockPedals[0] = mockPedals[1] = false;
+      setup(); run(5100);
+      require(protocol.state() == rgp::State::Recovering && output("TEL").empty(), "ALL mode must not invent absent pedals");
+      command(0, "OPEN_SESSION,0123456789ABCDEF"); command(1, "SET_INPUT_MODE,P1_STEERING");
+      run(20);
+      require(protocol.state() == rgp::State::WaitAngle && !device.status().ads, "P1 steering mode needs real calibration but not ADS");
+      command(2, "CALIBRATE,ALL"); run(11000);
+      require(protocol.state() == rgp::State::Ready && handles[0].calib.valid && !device.status().ads, "P1 alone calibrates and becomes ready without either pedal or ADS");
+      handles[0].angleDeg = 78; pedals[0] = pedals[1] = .9f;
+      Serial.output.clear(); delay(10); outputLatestInputs(); auto tel = output("TEL");
+      require(tel.size() == 1 && tel[0].fields[3] == "78.00", "P1 physical angle reaches TEL");
+      for (size_t i = 4; i < 9; ++i) require(std::stof(tel[0].fields[i]) == 0, "unused axes are neutral only in explicit steering mode");
+      command(3, "GET_STATUS");
+      require(contains("ACK", "3,GET_STATUS,OK,READY,0,1,1,1"), "ADS absence remains honestly reported");
+      require(contains("EVT", "IMU_LOST,0x69"), "status queries identify the unused P2 slot after missed boot");
+      mockDevices[0x69] = true; run(1500);
+      require(protocol.state() == rgp::State::Ready && !handles[1].calib.valid, "an unused newly attached P2 must not interrupt P1");
+      mockDevices[0x68] = false; Serial.output.clear(); run(30);
+      require(protocol.state() == rgp::State::Recovering && output("TEL").empty(), "P2 can never substitute for the missing P1 wheel");
+      mockDevices[0x68] = true; run(2400);
+      require(protocol.state() == rgp::State::Ready, "P1 reference settles after reconnection");
+      command(4, "SET_INPUT_MODE,ALL"); run(20);
+      require(protocol.state() == rgp::State::Recovering, "switching back restores real pedal requirements");
+      command(5, "SET_INPUT_MODE,P1_STEERING"); run(20);
+      command(0, "OPEN_SESSION,FEDCBA9876543210"); run(20);
+      require(!protocol.p1SteeringOnly() && protocol.state() == rgp::State::Recovering, "a new session cannot inherit steering-only mode");
+      std::cout << "STEERING_ONLY_FIRMWARE_PASS " << assertions << " assertions\n"; return 0;
+    }
     if (mode == "p1" || mode == "p2") {
       singleHandleScenario(mode == "p1" ? 0 : 1);
       std::cout << "PASS: " << mode << "-only firmware simulation, " << assertions << " assertions.\n";

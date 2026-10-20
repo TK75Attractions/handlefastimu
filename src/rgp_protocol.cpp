@@ -190,8 +190,7 @@ void Protocol::receive(uint8_t byte, uint32_t now) {
 void Protocol::tick(uint32_t now) { decoder.expire(now); }
 bool Protocol::telemetry(const Inputs& inputs, uint32_t now) {
   const Status s = device.status();
-  if (currentState != State::Ready || !telStream || busy() || !s.ads || !s.imu ||
-      !s.angle || !s.calibrated || !validInputs(inputs)) return false;
+  if (currentState != State::Ready || !telStream || busy() || !inputsReady(s) || !validInputs(inputs)) return false;
   send("TEL", fixed(inputs.handle[0], 2) + "," + fixed(inputs.accel[0], 3) + "," +
        fixed(inputs.brake[0], 3) + "," + fixed(inputs.handle[1], 2) + "," +
        fixed(inputs.accel[1], 3) + "," + fixed(inputs.brake[1], 3), now);
@@ -224,6 +223,9 @@ void Protocol::command(const Message& m, uint32_t now) {
     expected = 2;
     if (arg(0) != "TEL" && arg(0) != "IMU" && arg(0) != "DBG") invalid = 1;
     else if (arg(1) != "0" && arg(1) != "1") invalid = 2;
+  } else if (name == "SET_INPUT_MODE") {
+    expected = 1;
+    if (arg(0) != "ALL" && arg(0) != "P1_STEERING") invalid = 1;
   } else if (name == "CALIBRATE") {
     expected = 1;
     if (arg(0) != "GYRO" && arg(0) != "MAG" && arg(0) != "ALL") invalid = 1;
@@ -260,13 +262,15 @@ void Protocol::command(const Message& m, uint32_t now) {
   else if (!known || (name == "CALIBRATE" && arg(0) == "MAG") ||
            (name == "SET_RATE" && arg(0) != "TEL") ||
            (name == "SET_STREAM" && arg(0) == "IMU")) result = "UNSUPPORTED";
-  else if (busy() && (name == "CALIBRATE" || name == "SCAN_I2C"))
+  else if (busy() && (name == "CALIBRATE" || name == "SCAN_I2C" || name == "SET_INPUT_MODE"))
     result = "BUSY," + activeCommand + "," + number(activeOrigin);
   else if ((name == "ANGLE_ZERO" || name == "SET_BETA" || name == "CALIBRATE") &&
            currentState != State::Ready && currentState != State::WaitAngle)
     result = "NOT_READY," + std::string(stateName(currentState));
   else if (name == "OPEN_SESSION") {
     session = arg(0);
+    // A new host never inherits a previous host's reduced hardware requirements.
+    if (newSession) steeringOnly = false;
     result = "OK," + session;
   } else if (name == "PING") result = "OK,PONG";
   else if (name == "GET_STATUS") {
@@ -275,7 +279,12 @@ void Protocol::command(const Message& m, uint32_t now) {
       (s.imu ? "1" : "0") + "," + (s.angle ? "1" : "0") + "," + (s.calibrated ? "1" : "0");
   } else if (name == "GET_CONFIG") {
     result = "OK,TEL_RATE," + number(telRate) + ",IMU_RATE,20,TEL_STREAM," + (telStream ? "1" : "0") +
-      ",IMU_STREAM,0,DBG_STREAM," + (dbgStream ? "1" : "0") + ",BETA," + fixed(currentBeta, 3);
+      ",IMU_STREAM,0,DBG_STREAM," + (dbgStream ? "1" : "0") + ",BETA," + fixed(currentBeta, 3) +
+      ",INPUT_MODE," + (steeringOnly ? "P1_STEERING" : "ALL");
+  } else if (name == "SET_INPUT_MODE") {
+    steeringOnly = arg(0) == "P1_STEERING";
+    changed = "INPUT_MODE," + arg(0);
+    result = "OK," + arg(0);
   } else if (name == "ANGLE_ZERO") {
     zeroed = device.zeroAngles();
     result = zeroed ? "OK" : "FAILED,ANGLE_REFERENCE_INVALID";
@@ -306,6 +315,7 @@ void Protocol::command(const Message& m, uint32_t now) {
   ++processed;
   receipts.push_back({m.seq, now, processed, m.body, result});
   ack(result);
+  if (name == "GET_STATUS" && result.compare(0, 3, "OK,") == 0) device.reportInputDevices(now);
   if (!changed.empty()) event("CONFIG_CHANGED," + changed, now);
   if (name == "ANGLE_ZERO" && result == "FAILED,ANGLE_REFERENCE_INVALID")
     error("WARN,HANDLE,ANGLE_REFERENCE_INVALID", now);
@@ -313,7 +323,7 @@ void Protocol::command(const Message& m, uint32_t now) {
     event("ANGLE_RESET", now);
     event("ANGLE_LOCKED", now);
     const Status s = device.status();
-    if (s.ads && s.imu && s.angle && s.calibrated) setState(State::Ready, now);
+    if (inputsReady(s)) setState(State::Ready, now);
   }
   if (startCal) device.calibrate(m.seq, arg(0));
   if (startScan) device.scan(m.seq);

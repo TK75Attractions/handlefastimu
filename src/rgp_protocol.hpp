@@ -57,6 +57,7 @@ public:
   // These only schedule work; serial input must keep being serviced.
   virtual void calibrate(uint32_t origin, const std::string& target) = 0;
   virtual void scan(uint32_t origin) = 0;
+  virtual void reportInputDevices(uint32_t) {}
 };
 
 class Protocol {
@@ -74,6 +75,8 @@ public:
   uint32_t telemetryPeriodUs() const { return 1000000U / telRate; }
   bool telemetryEnabled() const { return telStream; }
   bool diagnosticsEnabled() const { return dbgStream; }
+  bool p1SteeringOnly() const { return steeringOnly; }
+  bool inputsReady(const Status& s) const { return (steeringOnly || s.ads) && s.imu && s.angle && s.calibrated; }
   float beta() const { return currentBeta; }
   bool busy() const { return !activeCommand.empty(); }
   void finishOperation() { activeCommand.clear(); }
@@ -94,6 +97,7 @@ private:
   float currentBeta = 0.2f;
   bool telStream = true;
   bool dbgStream = false;
+  bool steeringOnly = false;
   std::string session;
   std::vector<Receipt> receipts;
   std::string activeCommand;

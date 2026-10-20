@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix="rgp-tests-") as temporary:
         str(ROOT / "src/rgp_protocol.cpp"), str(ROOT / "test/firmware_test.cpp"),
         "-o", str(firmware),
     ], check=True)
-    for mode in ("both", "p1", "p2", "none"):
+    for mode in ("both", "p1", "p2", "none", "steering-only"):
         subprocess.run([str(firmware), mode], check=True)
 
     merged = Path(temporary) / "merged_features_test"
